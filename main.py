@@ -5,7 +5,7 @@ import yfinance as yf
 import google.generativeai as genai
 
 app = Flask(__name__)
-CORS(app) # 這行是為了讓網頁能順利抓資料
+CORS(app) 
 
 # 配置 API Key
 genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
@@ -26,15 +26,8 @@ def predict():
         
         latest_data = df.tail(10).to_string()
 
-        # 2. 自動尋找目前可用的模型 (解決 404 問題)
-        # 我們先試著抓出所有支援產生成內容的模型
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # 優先使用 flash 模型，若沒有則用清單第一個
-        target_model = 'models/gemini-1.5-flash'
-        if target_model not in available_models:
-            target_model = available_models[0] if available_models else 'gemini-pro'
-
+        # 【關鍵修正】強制指定使用每天有 1500 次免費額度的 1.5 版本
+        target_model = 'gemini-1.5-flash'
         model = genai.GenerativeModel(target_model)
         
         prompt = (
@@ -48,10 +41,22 @@ def predict():
             "status": "success",
             "symbol": symbol,
             "analysis": response.text,
-            "using_model": target_model # 讓您知道它用了哪個模型
+            "using_model": target_model
         })
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        # 如果 1.5 剛好連線不穩，自動降級到最傳統的 pro 模型 (備用方案)
+        try:
+            backup_model = 'gemini-pro'
+            model_alt = genai.GenerativeModel(backup_model)
+            response_alt = model_alt.generate_content(f"請分析 {symbol} 近期走勢，並提供 KD 與 MACD 建議:\n{latest_data}")
+            return jsonify({
+                "status": "success",
+                "symbol": symbol,
+                "analysis": response_alt.text,
+                "using_model": backup_model
+            })
+        except Exception as backup_error:
+            return jsonify({"status": "error", "message": f"主要模型錯誤: {str(e)} | 備用模型錯誤: {str(backup_error)}"}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
