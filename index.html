@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>我的 AI 股票預測工具</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: white; padding: 20px; }
+        .card { background: #1e1e1e; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+        input, button { padding: 10px; border-radius: 5px; border: none; }
+        button { background: #007bff; color: white; cursor: pointer; }
+        #result { white-space: pre-wrap; line-height: 1.6; color: #00ff00; }
+    </style>
+</head>
+<body>
+    <h1>AI 股票輔助神器</h1>
+    <div class="card">
+        <input type="text" id="symbol" value="2330.TW">
+        <button onclick="analyze()">開始分析</button>
+    </div>
+    <div class="card">
+        <h3>AI 分析結果：</h3>
+        <div id="result">等待輸入中...</div>
+    </div>
+    <script>
+        async function analyze() {
+            const symbol = document.getElementById('symbol').value;
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerText = "AI 正在分析中，請稍候...";
+            
+            // 請將下方的網址換成您在 Render 拿到的網址
+            const response = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${symbol}`);
+            const data = await response.json();
+            
+            if(data.status === "success") {
+                resultDiv.innerText = data.analysis;
+            } else {
+                resultDiv.innerText = "分析出錯了：" + data.message;
+            }
+        }
+    </script>
+</body>
+</html>
