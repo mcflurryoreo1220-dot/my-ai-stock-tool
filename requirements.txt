@@ -2,3 +2,4 @@ flask
 yfinance
 google-generativeai
 pandas
+flask-cors
