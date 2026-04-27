@@ -17,19 +17,28 @@ def home():
 def predict():
     symbol = request.args.get('symbol', '2330.TW')
     try:
-        # 1. 抓取股票數據
+        # 1. 抓取股票數據 (3個月數據)
         stock = yf.Ticker(symbol)
-        df = stock.history(period="1mo")
+        df = stock.history(period="3mo")
         if df.empty:
             return jsonify({"status": "error", "message": "找不到股票數據"}), 400
         
-        latest_data = df.tail(10).to_string()
+        # 【新增功能】：打包 K 線圖表所需的資料
+        chart_data = []
+        for date, row in df.iterrows():
+            chart_data.append({
+                "time": date.strftime('%Y-%m-%d'),
+                "open": float(row['Open']),
+                "high": float(row['High']),
+                "low": float(row['Low']),
+                "close": float(row['Close'])
+            })
+
+        latest_data = df.tail(40).to_string()
         current_price = float(df['Close'].iloc[-1])
 
-        # 【關鍵修正】強制抓取真實公司名稱，防堵 AI 幻覺
         try:
             company_name = stock.info.get('shortName', '')
-            # 如果抓得到名稱，就組合成 "致新 (8081.TW)"，否則只給代碼
             display_name = f"{company_name} ({symbol})" if company_name else symbol
         except:
             display_name = symbol
@@ -41,16 +50,15 @@ def predict():
 
         model = genai.GenerativeModel(target_model)
         
-        # 3. 升級提示詞 (強制寫入正確名稱，嚴格禁止瞎猜)
+        # 3. AI 提示詞
         prompt = (
-            f"你是一位擁有 20 年經驗的台股操盤手。請針對 {display_name} 近期的價格與成交量數據進行「15 大訊號全面健檢」。\n"
-            f"注意：請嚴格使用我提供的公司名稱 {display_name}，絕對不要自行猜測或替換成其他公司名稱。\n"
-            f"請從以下幾個維度進行結構化分析：\n"
-            f"1. 均線與趨勢判定\n"
-            f"2. KD、MACD 等動能指標診斷\n"
-            f"3. 量價關係與潛在籌碼變化推測\n"
-            f"4. 支撐壓力與近期 K 線型態\n"
-            f"最後，請綜合以上訊號，給出一份包含『進場策略、停損點位』的操作建議。\n\n"
+            f"你是一位擁有 20 年經驗的台股操盤手。請針對 {display_name} 的數據進行「15 大訊號全面健檢」。\n"
+            f"【重要指示】：\n"
+            f"1. 若 {display_name} 包含英文名稱，請自動替換為台灣股民熟知的「中文簡稱」。\n"
+            f"2. 我已提供近 40 個交易日的完整數據，請直接進行均線、KD、MACD 等實質分析，絕對不要在報告中出現「數據不足」等推託之詞。\n"
+            f"3. 請保持專業、俐落的市場老手語氣。\n\n"
+            f"請從以下維度分析：一、均線與趨勢判定；二、動能指標診斷；三、量價關係；四、支撐壓力與K線型態。\n"
+            f"最後給出包含『進場策略、停損點位』的操作建議。\n\n"
             f"數據：\n{latest_data}"
         )
         
@@ -60,6 +68,7 @@ def predict():
             "status": "success",
             "symbol": symbol,
             "current_price": current_price,
+            "chart_data": chart_data, # 將圖表資料傳給網頁
             "analysis": response.text,
             "using_model": target_model
         })
