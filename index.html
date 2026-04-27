@@ -11,8 +11,8 @@
         .card { background: var(--card-bg); padding: 25px; border-radius: 12px; border: 1px solid #333; }
         h1, h2, h3 { color: #fff; margin-top: 0; }
         .input-group { display: flex; gap: 10px; margin-bottom: 15px; }
-        input { flex: 1; padding: 12px; background: #2c2c2c; border: 1px solid #444; color: white; border-radius: 6px; }
-        button { padding: 12px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; color: white; }
+        input { flex: 1; padding: 12px; background: #2c2c2c; border: 1px solid #444; color: white; border-radius: 6px; font-size: 16px; }
+        button { padding: 12px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; color: white; font-size: 15px; }
         .btn-primary { background: var(--primary-color); }
         .btn-success { background: var(--success-color); }
         .btn-danger { background: var(--danger-color); padding: 6px 12px; font-size: 12px; }
@@ -31,7 +31,7 @@
         <div class="card">
             <h2>AI 15大訊號分析區</h2>
             <div class="input-group">
-                <input type="text" id="symbol" placeholder="輸入代碼 (例: 2330.TW)" value="2441.TW">
+                <input type="text" id="symbol" placeholder="輸入代碼 (例: 2330)" value="2330">
                 <button id="analyzeBtn" class="btn-primary" onclick="analyze()">開始健檢</button>
             </div>
             
@@ -69,7 +69,20 @@
         renderPortfolio();
 
         async function analyze() {
-            const symbol = document.getElementById('symbol').value;
+            // 抓取輸入框的數值並去除前後空白
+            let rawSymbol = document.getElementById('symbol').value.trim().toUpperCase();
+            
+            if (!rawSymbol) {
+                alert("請先輸入股票代碼！");
+                return;
+            }
+
+            // 【關鍵優化】：如果使用者輸入的是「純數字」，自動補上 .TW
+            const symbol = /^\d+$/.test(rawSymbol) ? rawSymbol + ".TW" : rawSymbol;
+            
+            // 把補齊 .TW 的字串放回輸入框，讓使用者確認
+            document.getElementById('symbol').value = symbol;
+
             const resultDiv = document.getElementById('result');
             const btn = document.getElementById('analyzeBtn');
             const tradeZone = document.getElementById('tradeZone');
@@ -80,10 +93,8 @@
             resultDiv.innerHTML = '<span style="color:#007bff;">AI 正在進行 15 大訊號結構化分析，可能需要 15~40 秒，請耐心稍候...</span>';
             
             try {
-                // 確認這串網址正確無誤
                 const response = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${symbol}`);
                 
-                // 【關鍵修正】攔截伺服器的非 JSON 錯誤 (如 502 Bad Gateway)
                 if (!response.ok) {
                     const errorText = await response.text();
                     throw new Error(`伺服器回應異常 (代碼: ${response.status}) - ${errorText.substring(0, 50)}...`);
@@ -104,7 +115,6 @@
                     resultDiv.innerHTML = `<span style="color:var(--danger-color);">分析出錯了：${data.message}</span>`;
                 }
             } catch (error) {
-                // 【精準錯誤提示】
                 resultDiv.innerHTML = `
                     <span style="color:var(--danger-color);">❌ 連線或解析失敗！</span><br>
                     <strong>詳細原因：</strong> ${error.message}<br><br>
