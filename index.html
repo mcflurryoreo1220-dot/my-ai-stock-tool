@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 股票輔助神器 - 專業圖表版</title>
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    
     <style>
         :root { --bg-color: #121212; --card-bg: #1e1e1e; --primary-color: #007bff; --success-color: #00c853; --danger-color: #ff3d00; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); color: #e0e0e0; padding: 20px; line-height: 1.6; }
@@ -19,7 +21,6 @@
         .btn-danger { background: var(--danger-color); padding: 6px 12px; font-size: 12px; }
         button:disabled { background: #444; cursor: not-allowed; }
         
-        /* 圖表專屬區塊設定 */
         #chartContainer { width: 100%; height: 350px; display: none; margin-bottom: 20px; border-radius: 8px; overflow: hidden; border: 1px solid #444; }
         
         #result { white-space: pre-wrap; color: #a5d6a7; font-size: 15px; padding: 15px; background: #000; border-radius: 8px; max-height: 400px; overflow-y: auto; }
@@ -46,7 +47,6 @@
             </div>
 
             <div id="chartContainer"></div>
-
             <div id="result">等待輸入代碼...</div>
         </div>
 
@@ -73,7 +73,6 @@
         let currentAnalysis = { symbol: '', price: 0 };
         let portfolio = JSON.parse(localStorage.getItem('myPortfolio')) || [];
         
-        // 圖表全域變數
         let chart = null;
 
         renderPortfolio();
@@ -93,7 +92,7 @@
             btn.disabled = true;
             btn.innerText = "訊號掃描中...";
             tradeZone.style.display = "none";
-            chartContainer.style.display = "none"; // 分析時先隱藏圖表
+            chartContainer.style.display = "none"; 
             resultDiv.innerHTML = '<span style="color:#007bff;">AI 正在進行 15 大訊號結構化分析與圖表運算，請耐心稍候...</span>';
             
             try {
@@ -115,7 +114,6 @@
                     document.getElementById('currentPriceDisplay').innerText = `最新收盤價: ${data.current_price} 元`;
                     tradeZone.style.display = "flex";
                     
-                    // 繪製 K 線圖
                     if (data.chart_data && data.chart_data.length > 0) {
                         renderChart(data.chart_data);
                     }
@@ -132,17 +130,16 @@
             }
         }
 
-        // 繪製 TradingView 輕量圖表的專屬函數
         function renderChart(chartData) {
             const container = document.getElementById('chartContainer');
             container.style.display = 'block';
 
-            // 如果畫布上已經有圖表，先清除避免重疊
+            // 【進階優化】：正確卸載舊圖表，釋放記憶體
             if (chart) {
-                container.innerHTML = '';
+                chart.remove();
+                chart = null;
             }
 
-            // 初始化圖表介面
             chart = LightweightCharts.createChart(container, {
                 width: container.clientWidth,
                 height: 350,
@@ -151,17 +148,16 @@
                 crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
             });
 
-            // 設定 K 線的樣式 (台股設定：紅漲綠跌)
             const candlestickSeries = chart.addCandlestickSeries({
-                upColor: '#ef5350',      // 漲：紅色
-                downColor: '#26a69a',    // 跌：綠色
+                upColor: '#ef5350',      
+                downColor: '#26a69a',    
                 borderVisible: false,
                 wickUpColor: '#ef5350',
                 wickDownColor: '#26a69a',
             });
 
             candlestickSeries.setData(chartData);
-            chart.timeScale().fitContent(); // 自動縮放畫面
+            chart.timeScale().fitContent(); 
         }
 
         function buyStock() {
