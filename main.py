@@ -1,4 +1,5 @@
 import os
+import json
 from flask import Flask, request, jsonify
 from flask_cors import CORS 
 import yfinance as yf
@@ -17,13 +18,13 @@ def home():
 def predict():
     symbol = request.args.get('symbol', '2330.TW')
     try:
-        # 1. 抓取股票數據 (3個月數據)
+        # 1. 抓取股票數據
         stock = yf.Ticker(symbol)
         df = stock.history(period="3mo")
         if df.empty:
             return jsonify({"status": "error", "message": "找不到股票數據"}), 400
         
-        # 【新增功能】：打包 K 線圖表所需的資料
+        # 打包 K 線圖表所需的資料
         chart_data = []
         for date, row in df.iterrows():
             chart_data.append({
@@ -37,6 +38,7 @@ def predict():
         latest_data = df.tail(40).to_string()
         current_price = float(df['Close'].iloc[-1])
 
+        # 抓取真實公司名稱防幻覺
         try:
             company_name = stock.info.get('shortName', '')
             display_name = f"{company_name} ({symbol})" if company_name else symbol
@@ -50,26 +52,43 @@ def predict():
 
         model = genai.GenerativeModel(target_model)
         
-        # 3. AI 提示詞
+        # 3. 【關鍵升級】：強制 AI 輸出 JSON 格式的結構化數據
         prompt = (
-            f"你是一位擁有 20 年經驗的台股操盤手。請針對 {display_name} 的數據進行「15 大訊號全面健檢」。\n"
-            f"【重要指示】：\n"
-            f"1. 若 {display_name} 包含英文名稱，請自動替換為台灣股民熟知的「中文簡稱」。\n"
-            f"2. 我已提供近 40 個交易日的完整數據，請直接進行均線、KD、MACD 等實質分析，絕對不要在報告中出現「數據不足」等推託之詞。\n"
-            f"3. 請保持專業、俐落的市場老手語氣。\n\n"
-            f"請從以下維度分析：一、均線與趨勢判定；二、動能指標診斷；三、量價關係；四、支撐壓力與K線型態。\n"
-            f"最後給出包含『進場策略、停損點位』的操作建議。\n\n"
+            f"你是一位擁有 20 年經驗的台股操盤手。請針對 {display_name} 的數據進行分析。\n"
+            f"【極重要指示】：\n"
+            f"你必須以純 JSON 格式輸出結果，絕對不要包含任何 Markdown 標記 (例如 ```json)。\n"
+            f"JSON 的 Key 必須嚴格包含以下五個項目：\n"
+            f"1. \"trend\" (字串，判斷目前趨勢，如：短線偏強、震盪整理、破底危機)\n"
+            f"2. \"pressure\" (數字，近期的關鍵壓力價位)\n"
+            f"3. \"support\" (數字，近期的關鍵支撐價位)\n"
+            f"4. \"summary\" (字串，100字以內的技術面與K線型態總結)\n"
+            f"5. \"action\" (字串，具體的操作建議，如：空手觀望、逢回找買點、分批停利)\n\n"
             f"數據：\n{latest_data}"
         )
         
         response = model.generate_content(prompt)
         
+        # 4. 解析 AI 回傳的 JSON 資料
+        try:
+            # 清除 AI 有時會雞婆加上的 markdown 標籤
+            raw_text = response.text.replace("```json", "").replace("```", "").strip()
+            ai_data = json.loads(raw_text)
+        except Exception as parse_err:
+            # 萬一 AI 格式寫錯的防呆機制
+            ai_data = {
+                "trend": "解析失敗",
+                "pressure": 0,
+                "support": 0,
+                "summary": f"AI 回傳格式異常，請再試一次。原始文字: {response.text[:50]}...",
+                "action": "暫停操作"
+            }
+        
         return jsonify({
             "status": "success",
             "symbol": symbol,
             "current_price": current_price,
-            "chart_data": chart_data, # 將圖表資料傳給網頁
-            "analysis": response.text,
+            "chart_data": chart_data,
+            "ai_analysis": ai_data, # 將結構化的資料傳給網頁
             "using_model": target_model
         })
     except Exception as e:
