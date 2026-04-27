@@ -24,8 +24,15 @@ def predict():
             return jsonify({"status": "error", "message": "找不到股票數據"}), 400
         
         latest_data = df.tail(10).to_string()
-        # 抓取最後一個交易日的收盤價，這是模擬倉需要的關鍵數據
         current_price = float(df['Close'].iloc[-1])
+
+        # 【關鍵修正】強制抓取真實公司名稱，防堵 AI 幻覺
+        try:
+            company_name = stock.info.get('shortName', '')
+            # 如果抓得到名稱，就組合成 "致新 (8081.TW)"，否則只給代碼
+            display_name = f"{company_name} ({symbol})" if company_name else symbol
+        except:
+            display_name = symbol
 
         # 2. 智慧篩選模型
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
@@ -34,9 +41,10 @@ def predict():
 
         model = genai.GenerativeModel(target_model)
         
-        # 3. 升級為 15 大訊號專業提示詞
+        # 3. 升級提示詞 (強制寫入正確名稱，嚴格禁止瞎猜)
         prompt = (
-            f"你是一位擁有 20 年經驗的台股操盤手。請針對 {symbol} 近期的價格與成交量數據進行「15 大訊號全面健檢」。\n"
+            f"你是一位擁有 20 年經驗的台股操盤手。請針對 {display_name} 近期的價格與成交量數據進行「15 大訊號全面健檢」。\n"
+            f"注意：請嚴格使用我提供的公司名稱 {display_name}，絕對不要自行猜測或替換成其他公司名稱。\n"
             f"請從以下幾個維度進行結構化分析：\n"
             f"1. 均線與趨勢判定\n"
             f"2. KD、MACD 等動能指標診斷\n"
