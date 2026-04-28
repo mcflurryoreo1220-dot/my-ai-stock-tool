@@ -20,17 +20,32 @@ if api_key:
 
 @app.route('/')
 def home():
-    return "AI 戰情室大腦運轉中！(已搭載 PRO 級旗艦量化引擎)"
+    return "AI 戰情室大腦運轉中！(搭載 OBV 與多週期運算引擎)"
 
 @app.route('/predict', methods=['GET'])
 def predict():
     symbol = request.args.get('symbol', '2330.TW')
+    # 接收前端傳來的时间週期 (預設為 1d 日線)
+    interval = request.args.get('interval', '1d')
+    
     try:
+        # 根據週期動態調整抓取長度
+        if interval == '1d':
+            period = "6mo"
+        elif interval == '60m':
+            period = "1mo"
+        elif interval == '15m':
+            period = "1mo"
+        elif interval == '5m':
+            period = "5d"
+        else:
+            period = "1mo"
+
         # 1. 抓取技術面數據
         stock = yf.Ticker(symbol)
-        df = stock.history(period="6mo")
+        df = stock.history(period=period, interval=interval)
         if df.empty:
-            return jsonify({"status": "error", "message": f"無法獲取 {symbol} 數據。"}), 400
+            return jsonify({"status": "error", "message": f"無法獲取 {symbol} 數據。台灣時間盤中或剛開盤時，分K資料可能會有延遲。"}), 400
 
         # 計算 MACD 與 KD
         df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
@@ -56,15 +71,27 @@ def predict():
         df['K'] = K
         df['D'] = D
         
+        # 【新增方向一】：計算 OBV (能量潮指標)
+        df['Volume_Dir'] = np.sign(df['Close'].diff())
+        df['Volume_Dir'] = df['Volume_Dir'].fillna(0)
+        df['OBV'] = (df['Volume'] * df['Volume_Dir']).cumsum()
+
         df = df.fillna(0)
-        df_chart = df.tail(60)
+        # 取最後 80 筆資料畫圖，讓分K能看多一點
+        df_chart = df.tail(80)
         
-        chart_data, macd_data, kd_data = [], [], []
+        chart_data, macd_data, kd_data, obv_data = [], [], [], []
         for date, row in df_chart.iterrows():
-            time_str = date.strftime('%Y-%m-%d')
-            chart_data.append({"time": time_str, "open": row['Open'], "high": row['High'], "low": row['Low'], "close": row['Close']})
-            macd_data.append({"time": time_str, "dif": row['DIF'], "signal": row['MACD_Signal'], "osc": row['OSC']})
-            kd_data.append({"time": time_str, "k": row['K'], "d": row['D']})
+            # 處理時間格式：日線用字串，分K用 Unix Timestamp 確保圖表時間軸精準
+            if interval == '1d':
+                time_val = date.strftime('%Y-%m-%d')
+            else:
+                time_val = int(date.timestamp())
+
+            chart_data.append({"time": time_val, "open": row['Open'], "high": row['High'], "low": row['Low'], "close": row['Close']})
+            macd_data.append({"time": time_val, "dif": row['DIF'], "signal": row['MACD_Signal'], "osc": row['OSC']})
+            kd_data.append({"time": time_val, "k": row['K'], "d": row['D']})
+            obv_data.append({"time": time_val, "value": row['OBV']})
 
         latest_data = df.tail(40).to_string()
         current_price = float(df['Close'].iloc[-1])
@@ -75,37 +102,38 @@ def predict():
         except:
             display_name = symbol
             
-        # 抓取籌碼數據
+        # 抓取籌碼數據 (僅日線才有三大法人)
         pure_symbol = symbol.replace('.TW', '').replace('.TWO', '')
-        chip_info = "無籌碼資料"
+        chip_info = "非日線層級，略過籌碼分析"
         chip_chart_data = []
-        try:
-            dl = DataLoader()
-            start_date = (datetime.datetime.now() - datetime.timedelta(days=90)).strftime('%Y-%m-%d')
-            df_chips = dl.taiwan_stock_institutional_investors(stock_id=pure_symbol, start_date=start_date)
-            if isinstance(df_chips, pd.DataFrame) and not df_chips.empty:
-                df_chips['net_buy'] = df_chips['buy'] - df_chips['sell']
-                chip_info = df_chips[['date', 'name', 'net_buy']].tail(40).to_string()
-                daily_chips = df_chips.groupby('date')['net_buy'].sum().reset_index()
-                for _, r in daily_chips.iterrows():
-                    chip_chart_data.append({"time": str(r['date']), "value": round(float(r['net_buy']) / 1000, 2)})
-        except Exception as e:
-            pass
+        
+        if interval == '1d':
+            try:
+                dl = DataLoader()
+                start_date = (datetime.datetime.now() - datetime.timedelta(days=90)).strftime('%Y-%m-%d')
+                df_chips = dl.taiwan_stock_institutional_investors(stock_id=pure_symbol, start_date=start_date)
+                if isinstance(df_chips, pd.DataFrame) and not df_chips.empty:
+                    df_chips['net_buy'] = df_chips['buy'] - df_chips['sell']
+                    chip_info = df_chips[['date', 'name', 'net_buy']].tail(40).to_string()
+                    daily_chips = df_chips.groupby('date')['net_buy'].sum().reset_index()
+                    for _, r in daily_chips.iterrows():
+                        chip_chart_data.append({"time": str(r['date']), "value": round(float(r['net_buy']) / 1000, 2)})
+            except Exception as e:
+                pass
 
         # ==========================================
         # 2. 升級為 PRO 旗艦大腦核心
         # ==========================================
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # 鎖定搜尋並優先使用 1.5-pro 模型
         pro_models = [m for m in available_models if '1.5-pro' in m]
         target_model = pro_models[0] if pro_models else 'gemini-1.5-pro-latest'
-        
         model = genai.GenerativeModel(target_model)
         
-        # 3. 藍圖級 AI 提示詞
+        interval_name = "日線" if interval == "1d" else f"{interval} 分線"
+
+        # 3. 藍圖級 AI 提示詞 (加入多週期認知)
         prompt = (
-            f"你是台股頂級量化操盤手。請分析 {display_name}。\n"
+            f"你是台股頂級量化操盤手。請針對 {display_name} 的『{interval_name}』級別數據進行分析。\n"
             f"必須只輸出純 JSON，不可有 Markdown。\n"
             f"JSON 格式嚴格規定：\n"
             f"1. \"signal\": 4字以內，如「短線偏多」或「觀望」\n"
@@ -116,12 +144,11 @@ def predict():
             f"6. \"path_down\": 若下跌的可能路徑(限15字)\n"
             f"7. \"stars\": 1到5的整數，代表綜合推薦星級\n"
             f"8. \"advice\": 陣列包含3個字串，每個字串為一句簡短操作建議(限15字)\n\n"
-            f"【技術面】：\n{latest_data}\n\n"
+            f"【技術面 ({interval_name} 與 OBV量能)】：\n{latest_data}\n\n"
             f"【籌碼面】：\n{chip_info}"
         )
         
         try:
-            # 暴力提取 JSON，確保系統穩定度
             response = model.generate_content(prompt, generation_config=genai.GenerationConfig(temperature=0.1))
             text = response.text
             start = text.find('{')
@@ -139,8 +166,9 @@ def predict():
             }
         
         return jsonify({
-            "status": "success", "symbol": symbol, "current_price": current_price,
-            "chart_data": chart_data, "macd_data": macd_data, "kd_data": kd_data, "chip_data": chip_chart_data,
+            "status": "success", "symbol": symbol, "current_price": current_price, "interval": interval,
+            "chart_data": chart_data, "macd_data": macd_data, "kd_data": kd_data, 
+            "obv_data": obv_data, "chip_data": chip_chart_data,
             "ai_analysis": ai_data,
             "using_model": target_model
         })
