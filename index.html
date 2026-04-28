@@ -1,215 +1,122 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 股票輔助神器 - 專業戰情室</title>
-    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
-    <style>
-        :root { --bg-color: #0b0e14; --card-bg: #151924; --primary-color: #2962ff; --success-color: #ef5350; /*台股紅漲*/ --danger-color: #26a69a; /*台股綠跌*/ --text-main: #d1d4dc; --text-muted: #787b86; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); color: var(--text-main); padding: 20px; margin: 0; }
-        .container { max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: 3fr 1fr; gap: 20px; }
-        .card { background: var(--card-bg); padding: 20px; border-radius: 12px; border: 1px solid #2b2b43; }
-        .search-bar { display: flex; gap: 10px; margin-bottom: 20px; background: #0b0e14; padding: 15px; border-radius: 8px; border: 1px solid #2b2b43; }
-        input { flex: 1; padding: 12px 20px; background: #151924; border: 1px solid #2b2b43; color: white; border-radius: 6px; font-size: 16px; outline: none; }
-        button { padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; background: var(--primary-color); }
-        button:disabled { background: #2b2b43; color: var(--text-muted); cursor: not-allowed; }
+import os
+import json
+from flask import Flask, request, jsonify
+from flask_cors import CORS 
+import yfinance as yf
+import pandas as pd
+import google.generativeai as genai
+
+app = Flask(__name__)
+CORS(app) 
+
+genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+
+@app.route('/')
+def home():
+    return "AI 戰情室大腦運轉中！"
+
+@app.route('/predict', methods=['GET'])
+def predict():
+    symbol = request.args.get('symbol', '2330.TW')
+    try:
+        # 1. 抓取股票數據 (拉長到 6 個月確保均線與 MACD 計算準確)
+        stock = yf.Ticker(symbol)
+        df = stock.history(period="6mo")
+        if df.empty:
+            return jsonify({"status": "error", "message": "找不到股票數據"}), 400
+
+        # === 【新增技術指標運算引擎】 ===
+        # 計算 MACD (12, 26, 9)
+        df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
+        df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
+        df['DIF'] = df['EMA12'] - df['EMA26']
+        df['MACD_Signal'] = df['DIF'].ewm(span=9, adjust=False).mean()
+        df['OSC'] = df['DIF'] - df['MACD_Signal'] # 柱狀圖
+
+        # 計算 KD (9, 3, 3) - 台股標準算法
+        df['9_high'] = df['High'].rolling(9).max()
+        df['9_low'] = df['Low'].rolling(9).min()
+        df['RSV'] = (df['Close'] - df['9_low']) / (df['9_high'] - df['9_low']) * 100
         
-        /* 圖表區塊 (切分主圖與副圖) */
-        .chart-wrapper { width: 100%; display: none; flex-direction: column; gap: 5px; margin-bottom: 20px; border-radius: 8px; overflow: hidden; border: 1px solid #2b2b43; background: #0b0e14; padding: 5px; }
-        #mainChart { width: 100%; height: 350px; }
-        #macdChart { width: 100%; height: 150px; }
-        #kdChart { width: 100%; height: 150px; }
+        rsv_list = df['RSV'].fillna(50).tolist()
+        K, D = [], []
+        prev_k, prev_d = 50, 50
+        for rsv in rsv_list:
+            curr_k = (2/3) * prev_k + (1/3) * rsv
+            curr_d = (2/3) * prev_d + (1/3) * curr_k
+            K.append(curr_k)
+            D.append(curr_d)
+            prev_k, prev_d = curr_k, curr_d
         
-        /* AI 面板 */
-        .ai-dashboard { display: none; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
-        .info-box { background: #0b0e14; padding: 15px; border-radius: 8px; border: 1px solid #2b2b43; text-align: center; }
-        .info-box.wide { grid-column: span 4; text-align: left; }
-        .box-title { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
-        .box-value { font-size: 22px; font-weight: bold; color: #fff; }
+        df['K'] = K
+        df['D'] = D
+        # ==============================
 
-        #tradeZone { display: none; justify-content: space-between; align-items: center; background: #0b0e14; padding: 15px 20px; border-radius: 8px; border: 1px solid #2b2b43; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }
-        th, td { padding: 12px 10px; text-align: left; border-bottom: 1px solid #2b2b43; }
-        .profit { color: var(--success-color); } .loss { color: var(--danger-color); }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="card">
-            <div class="search-bar">
-                <input type="text" id="symbol" placeholder="輸入台股代碼 (例: 2330)" value="2330">
-                <button id="analyzeBtn" onclick="analyze()">啟動 AI 分析</button>
-            </div>
-            <div id="sysMessage"></div>
+        # 將含有空值的早期資料濾除，保留近 3 個月畫圖
+        df = df.dropna().tail(60) 
 
-            <div id="tradeZone">
-                <div style="display:flex; align-items:center; gap:15px;">
-                    <span style="font-size:18px; font-weight:bold; color:#fff;" id="stockTitle"></span>
-                    <span style="font-size: 24px; font-weight: bold; color: var(--success-color);" id="currentPriceDisplay"></span>
-                </div>
-                <button style="background:#ff9800;" onclick="buyStock()">加入模擬倉</button>
-            </div>
+        # 打包 K 線與指標資料
+        chart_data = []
+        macd_data = []
+        kd_data = []
+        
+        for date, row in df.iterrows():
+            time_str = date.strftime('%Y-%m-%d')
+            chart_data.append({"time": time_str, "open": row['Open'], "high": row['High'], "low": row['Low'], "close": row['Close']})
+            # MACD 包含 DIF(快線), Signal(慢線), OSC(柱狀圖)
+            macd_data.append({"time": time_str, "dif": row['DIF'], "signal": row['MACD_Signal'], "osc": row['OSC']})
+            # KD 包含 K與D
+            kd_data.append({"time": time_str, "k": row['K'], "d": row['D']})
 
-            <div class="chart-wrapper" id="chartWrapper">
-                <div id="mainChart"></div>
-                <div id="macdChart"></div>
-                <div id="kdChart"></div>
-            </div>
+        latest_data = df.tail(40).to_string()
+        current_price = float(df['Close'].iloc[-1])
 
-            <div id="aiDashboard" class="ai-dashboard">
-                <div class="info-box"><div class="box-title">目前趨勢</div><div class="box-value" style="color:#29b6f6;" id="ai-trend">--</div></div>
-                <div class="info-box"><div class="box-title">短線壓力</div><div class="box-value" style="color:var(--danger-color);" id="ai-pressure">--</div></div>
-                <div class="info-box"><div class="box-title">短線支撐</div><div class="box-value" style="color:var(--success-color);" id="ai-support">--</div></div>
-                <div class="info-box"><div class="box-title">操作建議</div><div class="box-value" style="color:#ffb74d;" id="ai-action">--</div></div>
-                <div class="info-box wide"><div class="box-title">AI 技術面總結</div><div style="font-size: 15px; color: #a5d6a7;" id="ai-summary">--</div></div>
-            </div>
-        </div>
+        try:
+            company_name = stock.info.get('shortName', '')
+            display_name = f"{company_name} ({symbol})" if company_name else symbol
+        except:
+            display_name = symbol
 
-        <div class="card">
-            <h2>我的模擬倉</h2>
-            <table id="portfolioTable">
-                <thead><tr><th>標的</th><th>買入</th><th>現價</th><th>損益</th><th>操作</th></tr></thead>
-                <tbody id="portfolioBody"></tbody>
-            </table>
-        </div>
-    </div>
+        # 2. 智慧篩選模型
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        flash_15_models = [m for m in available_models if '1.5-flash' in m]
+        target_model = flash_15_models[0] if flash_15_models else (available_models[0] if available_models else 'gemini-1.5-flash')
+        model = genai.GenerativeModel(target_model)
+        
+        # 3. AI 結構化提示詞
+        prompt = (
+            f"你是一位擁有 20 年經驗的台股操盤手。請針對 {display_name} 的數據進行分析。\n"
+            f"【極重要指示】：\n"
+            f"你必須以純 JSON 格式輸出結果，絕對不要包含任何 Markdown 標記。\n"
+            f"JSON 的 Key 必須嚴格包含以下五個項目：\n"
+            f"1. \"trend\" (字串，判斷目前趨勢)\n"
+            f"2. \"pressure\" (數字，近期的關鍵壓力價位)\n"
+            f"3. \"support\" (數字，近期的關鍵支撐價位)\n"
+            f"4. \"summary\" (字串，100字以內的技術面與K線型態總結)\n"
+            f"5. \"action\" (字串，具體的操作建議)\n\n"
+            f"數據：\n{latest_data}"
+        )
+        
+        response = model.generate_content(prompt)
+        
+        try:
+            raw_text = response.text.replace("```json", "").replace("```", "").strip()
+            ai_data = json.loads(raw_text)
+        except:
+            ai_data = {"trend": "解析失敗", "pressure": 0, "support": 0, "summary": "AI 回傳異常。", "action": "暫停操作"}
+        
+        return jsonify({
+            "status": "success",
+            "symbol": symbol,
+            "current_price": current_price,
+            "chart_data": chart_data,
+            "macd_data": macd_data,
+            "kd_data": kd_data,
+            "ai_analysis": ai_data
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-    <script>
-        let currentAnalysis = { symbol: '', price: 0 };
-        let portfolio = JSON.parse(localStorage.getItem('myPortfolio')) || [];
-        let charts = {}; // 存放三個圖表的物件
-
-        renderPortfolio();
-
-        async function analyze() {
-            let rawSymbol = document.getElementById('symbol').value.trim().toUpperCase();
-            if (!rawSymbol) return;
-            const symbol = /^\d+$/.test(rawSymbol) ? rawSymbol + ".TW" : rawSymbol;
-            document.getElementById('symbol').value = symbol;
-
-            const btn = document.getElementById('analyzeBtn');
-            const sysMsg = document.getElementById('sysMessage');
-            
-            document.getElementById('tradeZone').style.display = "none";
-            document.getElementById('chartWrapper').style.display = "none"; 
-            document.getElementById('aiDashboard').style.display = "none";
-            
-            btn.disabled = true; btn.innerText = "資料運算中...";
-            sysMsg.innerHTML = '<span style="color:var(--primary-color);">🔄 正在載入 K線、MACD、KD 數據...</span>';
-            
-            try {
-                const response = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${symbol}`);
-                if (!response.ok) throw new Error(`伺服器異常 (${response.status})`);
-                const data = await response.json();
-                
-                if (data.status === "success") {
-                    sysMsg.innerHTML = '';
-                    currentAnalysis.symbol = data.symbol; currentAnalysis.price = data.current_price;
-                    document.getElementById('stockTitle').innerText = data.symbol.replace('.TW', '');
-                    document.getElementById('currentPriceDisplay').innerText = data.current_price;
-                    document.getElementById('tradeZone').style.display = "flex";
-                    
-                    const ai = data.ai_analysis;
-                    document.getElementById('ai-trend').innerText = ai.trend || '--';
-                    document.getElementById('ai-pressure').innerText = ai.pressure || '--';
-                    document.getElementById('ai-support').innerText = ai.support || '--';
-                    document.getElementById('ai-action').innerText = ai.action || '--';
-                    document.getElementById('ai-summary').innerText = ai.summary || '--';
-                    document.getElementById('aiDashboard').style.display = "grid";
-                    
-                    if (data.chart_data) renderCharts(data.chart_data, data.macd_data, data.kd_data);
-                    updatePortfolioPrices(); 
-                } else {
-                    sysMsg.innerHTML = `<span style="color:var(--danger-color);">❌ 分析出錯：${data.message}</span>`;
-                }
-            } catch (error) {
-                sysMsg.innerHTML = `<span style="color:var(--danger-color);">❌ 連線失敗：${error.message}</span>`;
-            } finally {
-                btn.disabled = false; btn.innerText = "啟動 AI 分析";
-            }
-        }
-
-        function renderCharts(klineData, macdData, kdData) {
-            document.getElementById('chartWrapper').style.display = 'flex';
-
-            // 清除舊圖表
-            if (charts.main) { charts.main.remove(); charts.macd.remove(); charts.kd.remove(); }
-
-            const chartOptions = { layout: { background: { color: '#0b0e14' }, textColor: '#787b86' }, grid: { vertLines: { color: '#151924' }, horzLines: { color: '#151924' } }, crosshair: { mode: LightweightCharts.CrosshairMode.Normal }, timeScale: { visible: false } };
-
-            // 1. 主 K 線圖
-            const mainContainer = document.getElementById('mainChart');
-            charts.main = LightweightCharts.createChart(mainContainer, { ...chartOptions, height: 350 });
-            const candleSeries = charts.main.addCandlestickSeries({ upColor: '#ef5350', downColor: '#26a69a', borderVisible: false, wickUpColor: '#ef5350', wickDownColor: '#26a69a' });
-            candleSeries.setData(klineData);
-
-            // 2. MACD 副圖
-            const macdContainer = document.getElementById('macdChart');
-            charts.macd = LightweightCharts.createChart(macdContainer, { ...chartOptions, height: 150 });
-            const macdOscSeries = charts.macd.addHistogramSeries({ color: '#26a69a', priceFormat: { type: 'volume' }, priceScaleId: '' });
-            const macdDifSeries = charts.macd.addLineSeries({ color: '#29b6f6', lineWidth: 1.5 });
-            const macdSigSeries = charts.macd.addLineSeries({ color: '#ffa726', lineWidth: 1.5 });
-            
-            macdOscSeries.setData(macdData.map(d => ({ time: d.time, value: d.osc, color: d.osc > 0 ? '#ef5350' : '#26a69a' })));
-            macdDifSeries.setData(macdData.map(d => ({ time: d.time, value: d.dif })));
-            macdSigSeries.setData(macdData.map(d => ({ time: d.time, value: d.signal })));
-
-            // 3. KD 副圖 (顯示時間軸)
-            const kdContainer = document.getElementById('kdChart');
-            charts.kd = LightweightCharts.createChart(kdContainer, { ...chartOptions, height: 150, timeScale: { visible: true } });
-            const kLine = charts.kd.addLineSeries({ color: '#29b6f6', lineWidth: 1.5 }); // K線藍色
-            const dLine = charts.kd.addLineSeries({ color: '#ffa726', lineWidth: 1.5 }); // D線橘色
-            
-            kLine.setData(kdData.map(d => ({ time: d.time, value: d.k })));
-            dLine.setData(kdData.map(d => ({ time: d.time, value: d.d })));
-
-            // 【進階技巧】：同步三個圖表的縮放與十字游標
-            charts.main.timeScale().subscribeVisibleTimeRangeChange(range => { charts.macd.timeScale().setVisibleRange(range); charts.kd.timeScale().setVisibleRange(range); });
-            charts.macd.timeScale().subscribeVisibleTimeRangeChange(range => { charts.main.timeScale().setVisibleRange(range); charts.kd.timeScale().setVisibleRange(range); });
-            charts.kd.timeScale().subscribeVisibleTimeRangeChange(range => { charts.main.timeScale().setVisibleRange(range); charts.macd.timeScale().setVisibleRange(range); });
-            
-            charts.main.timeScale().fitContent();
-        }
-
-        // 模擬倉功能維持不變
-        function buyStock() {
-            if(!currentAnalysis.symbol || currentAnalysis.price === 0) return;
-            portfolio.push({ symbol: currentAnalysis.symbol, buyPrice: currentAnalysis.price, currentPrice: currentAnalysis.price });
-            saveAndRender();
-        }
-        function sellStock(index) { portfolio.splice(index, 1); saveAndRender(); }
-        function saveAndRender() { localStorage.setItem('myPortfolio', JSON.stringify(portfolio)); renderPortfolio(); }
-        function renderPortfolio() {
-            const tbody = document.getElementById('portfolioBody');
-            tbody.innerHTML = '';
-            if(portfolio.length === 0) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">目前無持股</td></tr>'; return; }
-            portfolio.forEach((item, index) => {
-                const pl = ((item.currentPrice - item.buyPrice) / item.buyPrice) * 100;
-                const plClass = pl >= 0 ? 'profit' : 'loss';
-                const plText = pl >= 0 ? `+${pl.toFixed(2)}%` : `${pl.toFixed(2)}%`;
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td style="color:#fff; font-weight:bold;">${item.symbol.replace('.TW', '')}</td>
-                    <td>${item.buyPrice.toFixed(1)}</td><td>${item.currentPrice.toFixed(1)}</td>
-                    <td class="${plClass}" style="font-weight:bold;">${plText}</td>
-                    <td><button style="background:var(--danger-color); color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="sellStock(${index})">平</button></td>
-                `;
-                tbody.appendChild(tr);
-            });
-        }
-        async function updatePortfolioPrices() {
-            for (let i = 0; i < portfolio.length; i++) {
-                try {
-                    const res = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${portfolio[i].symbol}`);
-                    if(res.ok) {
-                        const data = await res.json();
-                        if(data.status === "success") portfolio[i].currentPrice = data.current_price;
-                    }
-                } catch(e) {}
-            }
-            saveAndRender();
-        }
-    </script>
-</body>
-</html>
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
