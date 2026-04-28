@@ -6,7 +6,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS 
 import yfinance as yf
 import pandas as pd
-import numpy as np  # 新增：用於處理無限大等數學防呆
+import numpy as np
 import google.generativeai as genai
 from FinMind.data import DataLoader
 
@@ -17,7 +17,7 @@ genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
 
 @app.route('/')
 def home():
-    return "AI 戰情室大腦運轉中！(具備工業級防護)"
+    return "AI 戰情室大腦運轉中！(具備極簡戰報與量化訊號功能)"
 
 @app.route('/predict', methods=['GET'])
 def predict():
@@ -27,7 +27,7 @@ def predict():
         stock = yf.Ticker(symbol)
         df = stock.history(period="6mo")
         if df.empty:
-            return jsonify({"status": "error", "message": f"無法從資料庫獲取 {symbol} 的數據，請確認代碼或稍後再試。"}), 400
+            return jsonify({"status": "error", "message": f"無法從資料庫獲取 {symbol} 的數據，請確認代碼。"}), 400
 
         # 計算 MACD 與 KD
         df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
@@ -39,7 +39,7 @@ def predict():
         df['9_high'] = df['High'].rolling(9).max()
         df['9_low'] = df['Low'].rolling(9).min()
         
-        # 【防呆機制】：避免股價不動時，除以零產生無限大 (inf) 導致系統崩潰
+        # 數學防呆機制
         df['RSV'] = (df['Close'] - df['9_low']) / (df['9_high'] - df['9_low']) * 100
         df['RSV'] = df['RSV'].replace([np.inf, -np.inf], np.nan)
         
@@ -56,7 +56,6 @@ def predict():
         df['K'] = K
         df['D'] = D
         
-        # 強制填補所有空值，確保 JSON 格式正確
         df = df.fillna(0)
         df_chart = df.tail(60)
         
@@ -103,15 +102,22 @@ def predict():
         target_model = flash_15_models[0] if flash_15_models else (available_models[0] if available_models else 'gemini-1.5-flash')
         model = genai.GenerativeModel(target_model)
         
+        # 3. 【優化一】：軍事化極簡提示詞
         prompt = (
-            f"你是一位擁有 20 年經驗的台股操盤手。請針對 {display_name} 的數據進行分析。\n"
-            f"必須以純 JSON 格式輸出結果，絕不包含 Markdown 標記。\n"
-            f"Key 包含：trend, pressure, support, summary, action。\n\n"
-            f"技術面：\n{latest_data}\n\n"
-            f"籌碼面：\n{chip_info}"
+            f"你是一位台股頂級量化操盤手。請針對 {display_name} 進行分析。\n"
+            f"【極重要指示】：\n"
+            f"必須以純 JSON 格式輸出，絕對不可包含 Markdown 標記 (如 ```json)。\n"
+            f"所有文字必須『極度精簡、一針見血』，像軍事匯報一樣！\n"
+            f"JSON 格式嚴格規定如下：\n"
+            f"1. \"trend\": 字串，限 10 字以內，如「均線下彎，籌碼渙散」。\n"
+            f"2. \"pressure\": 字串，給出價位與極簡原因，如「93.0 (前高)」。\n"
+            f"3. \"support\": 字串，給出價位與極簡原因，如「86.0 (季線)」。\n"
+            f"4. \"action\": 字串，限 15 字以內，如「空手觀望，等待落底」。\n"
+            f"5. \"summary\": 字串，限 3 句話，總結技術與籌碼狀態，禁用列點符號，直接寫成一段精簡的話。\n\n"
+            f"【技術面】：\n{latest_data}\n\n"
+            f"【籌碼面】：\n{chip_info}"
         )
         
-        # 【防呆機制】：AI 當機時的安全網
         try:
             response = model.generate_content(prompt)
             raw_text = response.text.replace("```json", "").replace("```", "").strip()
@@ -120,10 +126,10 @@ def predict():
             print("AI 解析錯誤:", ai_err)
             ai_data = {
                 "trend": "AI 暫停服務", 
-                "pressure": 0, 
-                "support": 0, 
-                "summary": "Google AI 伺服器目前繁忙或回傳格式異常，但圖表數據已為您載入。", 
-                "action": "請稍後重新點擊分析"
+                "pressure": "--", 
+                "support": "--", 
+                "summary": "AI 伺服器繁忙，但圖表與量化訊號已為您載入。", 
+                "action": "請稍後重新分析"
             }
         
         return jsonify({
@@ -137,7 +143,6 @@ def predict():
             "ai_analysis": ai_data
         })
     except Exception as e:
-        # 將真實錯誤印在 Render 後台，並把具體原因傳給前端網頁
         error_details = traceback.format_exc()
         print("伺服器嚴重錯誤:\n", error_details)
         return jsonify({"status": "error", "message": f"內部錯誤: {str(e)}"}), 500
