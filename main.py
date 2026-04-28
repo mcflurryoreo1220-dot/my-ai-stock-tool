@@ -20,30 +20,39 @@ if api_key:
 
 @app.route('/')
 def home():
-    return "AI 戰情室大腦運轉中！(搭載 3分K 與 AI 雙引擎備援)"
+    return "AI 戰情室大腦運轉中！(搭載高階防呆、1分K與豐富戰報模組)"
 
 @app.route('/predict', methods=['GET'])
 def predict():
     symbol = request.args.get('symbol', '2330.TW')
     interval = request.args.get('interval', '1d')
     
+    # 確保傳入的 interval 是 yfinance 支援的格式 (攔截不支援的 3m)
+    valid_intervals = ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h', '1d', '5d', '1wk', '1mo', '3mo']
+    if interval not in valid_intervals:
+        interval = '1d'
+
     try:
-        # 新增 3m 支援
-        if interval == '1d': period = "6mo"
-        elif interval in ['60m', '15m']: period = "1mo"
-        elif interval in ['5m', '3m']: period = "5d"
-        else: period = "1mo"
+        # 依據頻率設定抓取期間
+        if interval in ['1m', '2m', '5m']:
+            period = "5d"
+        elif interval in ['15m', '30m', '60m', '90m', '1h']:
+            period = "1mo"
+        else:
+            period = "6mo"
 
         stock = yf.Ticker(symbol)
         df = stock.history(period=period, interval=interval)
         if df.empty:
-            return jsonify({"status": "error", "message": f"無法獲取 {symbol} 歷史數據。"}), 400
+            return jsonify({"status": "error", "message": f"無法獲取 {symbol} 的 {interval} 歷史數據。"}), 400
 
+        # 計算均線
         df['MA5'] = df['Close'].rolling(window=5).mean()
         df['MA10'] = df['Close'].rolling(window=10).mean()
         df['MA20'] = df['Close'].rolling(window=20).mean()
         df['MA60'] = df['Close'].rolling(window=60).mean()
 
+        # MACD & KD
         df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
         df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
         df['DIF'] = df['EMA12'] - df['EMA26']
@@ -66,6 +75,7 @@ def predict():
             prev_k, prev_d = curr_k, curr_d
         df['K'], df['D'] = K, D
         
+        # OBV
         df['Volume_Dir'] = np.sign(df['Close'].diff()).fillna(0)
         df['OBV'] = (df['Volume'] * df['Volume_Dir']).cumsum()
 
@@ -85,17 +95,20 @@ def predict():
 
         current_price = round(float(df['Close'].iloc[-1]), 2)
         display_name = symbol
+
+        # 基本面數據 (加上防護)
         fundamental_data = {"eps": "--", "pe_ratio": "--"}
-        
         try:
             info = stock.info
             display_name = info.get('shortName', symbol)
             eps = info.get("trailingEps")
             pe = info.get("trailingPE")
-            if eps: fundamental_data["eps"] = round(eps, 2)
-            if pe: fundamental_data["pe_ratio"] = round(pe, 2)
-        except: pass
+            if eps is not None: fundamental_data["eps"] = round(eps, 2)
+            if pe is not None: fundamental_data["pe_ratio"] = round(pe, 2)
+        except Exception as e:
+            print("基本面解析略過:", e)
 
+        # 籌碼面數據 (加上空值防護)
         pure_symbol = symbol.replace('.TW', '').replace('.TWO', '')
         chip_info, chip_chart_data, chip_table_data = "非日線層級", [], []
         
@@ -111,6 +124,8 @@ def predict():
                         '自營商(自行買賣)': '自營', '自營商(避險)': '自營', '自營商': '自營'
                     })
                     pivot_df = df_chips.groupby(['date', 'name'])['net_buy'].sum().unstack(fill_value=0).reset_index()
+                    
+                    # 確保三個欄位都存在
                     for col in ['外資', '投信', '自營']:
                         if col not in pivot_df.columns: pivot_df[col] = 0
                     pivot_df['合計'] = pivot_df['外資'] + pivot_df['投信'] + pivot_df['自營']
@@ -122,49 +137,69 @@ def predict():
                     
                     last_10 = pivot_df.tail(10).iloc[::-1]
                     for _, r in last_10.iterrows():
-                        chip_table_data.append({
-                            "date": str(r['date'])[5:], 
-                            "foreign": round(float(r['外資']) / 1000, 1),
-                            "trust": round(float(r['投信']) / 1000, 1),
-                            "dealer": round(float(r['自營']) / 1000, 1),
-                            "total": round(float(r['合計']) / 1000, 1)
-                        })
+                        try:
+                            chip_table_data.append({
+                                "date": str(r['date'])[5:], 
+                                "foreign": round(float(r.get('外資', 0)) / 1000, 1),
+                                "trust": round(float(r.get('投信', 0)) / 1000, 1),
+                                "dealer": round(float(r.get('自營', 0)) / 1000, 1),
+                                "total": round(float(r.get('合計', 0)) / 1000, 1)
+                            })
+                        except: pass
             except Exception as e:
                 print("籌碼解析異常:", e)
 
+        # AI 提示詞 (強制要求豐富的建議內容)
         prompt = (
             f"你是台股頂級量化操盤手。分析 {display_name} ({interval})。\n"
-            f"請輸出純 JSON，不可有 Markdown。\n"
-            f"格式：\n"
-            f"{{\"signal\": \"偏多/偏空/觀望\", \"pressure\": \"價格\", \"support\": \"價格\", \"stop_loss\": \"價格\", \"path_up\": \"上漲路徑\", \"path_down\": \"下跌路徑\", \"stars\": 1到5整數, \"advice\": [\"建議1\", \"建議2\", \"建議3\"]}}\n\n"
-            f"基本面：{fundamental_data}\n技術面：{df.tail(20).to_string()}\n籌碼面：{chip_info}"
+            f"必須只輸出純 JSON，不可有 Markdown。\n"
+            f"格式嚴格規定：\n"
+            f"{{\n"
+            f"  \"signal\": \"偏多/偏空/觀望\",\n"
+            f"  \"pressure\": \"價格\",\n"
+            f"  \"support\": \"價格\",\n"
+            f"  \"stop_loss\": \"價格\",\n"
+            f"  \"path_up\": \"上漲路徑推演\",\n"
+            f"  \"path_down\": \"下跌路徑推演\",\n"
+            f"  \"stars\": 1到5整數,\n"
+            f"  \"advice\": [\n"
+            f"    \"技術面：(請詳細解讀均線、MACD與KD)\",\n"
+            f"    \"籌碼面：(請解讀法人買賣超動向)\",\n"
+            f"    \"總結建議：(給出明確的進出場策略)\"\n"
+            f"  ]\n"
+            f"}}\n\n"
+            f"【基本面】：{fundamental_data}\n【技術面】：{df.tail(15).to_string()}\n【籌碼面】：{chip_info}"
         )
         
-        # 雙引擎備援機制
+        # 雙引擎備援 + 暴力正則提取
         ai_data = None
         models_to_try = ['gemini-1.5-pro-latest', 'gemini-1.5-flash']
         
         for model_name in models_to_try:
             try:
                 model = genai.GenerativeModel(model_name)
-                response = model.generate_content(
-                    prompt, 
-                    generation_config=genai.GenerationConfig(temperature=0.1, response_mime_type="application/json")
-                )
-                text = response.text.replace("```json", "").replace("```", "").strip()
-                match = re.search(r'\{.*\}', text, re.DOTALL)
-                if match:
-                    ai_data = json.loads(match.group(0))
-                    break # 成功解析就跳出迴圈
+                response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.1))
+                text = response.text
+                
+                # 暴力清除 Markdown
+                text = re.sub(r'```json\n?', '', text)
+                text = re.sub(r'```\n?', '', text)
+                text = text.strip()
+                
+                start = text.find('{')
+                end = text.rfind('}')
+                if start != -1 and end != -1:
+                    ai_data = json.loads(text[start:end+1])
+                    break
                 else:
                     ai_data = json.loads(text)
                     break
             except Exception as e:
-                print(f"[{model_name}] 引擎解析失敗，嘗試降級...")
+                print(f"[{model_name}] 引擎解析失敗:", e)
                 continue
                 
         if not ai_data:
-            ai_data = {"signal": "系統繁忙", "pressure": "--", "support": "--", "stop_loss": "--", "path_up": "--", "path_down": "--", "stars": 0, "advice": ["請稍後重新點擊分析"]}
+            ai_data = {"signal": "系統繁忙", "pressure": "--", "support": "--", "stop_loss": "--", "path_up": "--", "path_down": "--", "stars": 0, "advice": ["Google AI 伺服器超時", "但圖表與量化訊號已為您載入", "請稍後重新點擊掃描"]}
 
         return jsonify({
             "status": "success", "symbol": symbol, "current_price": current_price, "interval": interval,
@@ -173,8 +208,8 @@ def predict():
             "fundamental": fundamental_data, "ai_analysis": ai_data
         })
     except Exception as e:
-        print("系統錯誤:", traceback.format_exc())
-        return jsonify({"status": "error", "message": f"內部錯誤: {str(e)}"}), 500
+        print("系統嚴重錯誤:", traceback.format_exc())
+        return jsonify({"status": "error", "message": f"內部伺服器錯誤: {str(e)}"}), 500
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
