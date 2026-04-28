@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 股票戰情室 - 旗艦估值版</title>
+    <title>AI 股票戰情室 - 旗艦藍圖版</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         :root { --bg-dark: #050810; --panel-bg: #111520; --border-color: #232b3e; --text-main: #d1d4dc; --text-muted: #787b86; --blue: #2962ff; --red: #ef5350; --green: #26a69a; --orange: #ff9800; --ma5: #fdd835; --ma20: #ff4081; --ma60: #00bcd4; }
@@ -25,10 +25,9 @@
         .chart-wrapper { background: var(--panel-bg); padding: 5px; border-radius: 8px; border: 1px solid var(--border-color); }
         .chart-box { position: relative; width: 100%; }
         .chart-title { position: absolute; z-index: 2; padding: 3px 6px; font-size: 11px; background: rgba(0,0,0,0.6); color: #fff; top: 5px; left: 5px; display: flex; gap: 10px; align-items: center; }
-        /* 均線標籤樣式 */
         .legend-ma5 { color: var(--ma5); } .legend-ma20 { color: var(--ma20); } .legend-ma60 { color: var(--ma60); }
-        
         .chart-legend { position: absolute; z-index: 10; font-size: 12px; color: #fff; background: rgba(0,0,0,0.7); border-radius: 4px; top: 30px; left: 5px; padding: 5px; display: none; }
+        
         #mainChart { height: 350px; } .sub-chart { height: 120px; }
         
         .info-card { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; }
@@ -39,7 +38,6 @@
         .f-val { font-size: 16px; font-weight: bold; color: white; margin-top: 5px; }
         .stars { color: var(--orange); font-size: 20px; }
         
-        /* 籌碼表格樣式 */
         .chip-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; margin-top: 5px; }
         .chip-table th { background: #0b0e14; padding: 6px; color: var(--text-muted); border-bottom: 1px solid var(--border-color); font-weight: normal; }
         .chip-table td { padding: 6px; border-bottom: 1px solid #1a1e29; }
@@ -60,9 +58,12 @@
 <body>
     <div class="top-bar">
         <div class="search-group">
-            <input type="text" id="symbol" value="3661" placeholder="輸入台股代碼">
+            <input type="text" id="symbol" value="6269" placeholder="輸入台股代碼">
             <select id="intervalSelector">
-                <option value="1d">日K</option><option value="60m">60分K</option><option value="15m">15分K</option><option value="5m">5分K</option>
+                <option value="1d" selected>日K線</option>
+                <option value="60m">60分K</option>
+                <option value="15m">15分K</option>
+                <option value="5m">5分K</option>
             </select>
             <button id="analyzeBtn" onclick="analyze()">啟動全盤掃描</button>
         </div>
@@ -191,12 +192,10 @@
                     
                     document.getElementById('mainChartTitle').innerText = `${document.getElementById('intervalSelector').options[document.getElementById('intervalSelector').selectedIndex].text}`;
                     
-                    // 顯示或隱藏籌碼區塊
                     const isDaily = (data.interval === '1d');
                     document.getElementById('chipBox').style.display = isDaily ? "block" : "none";
                     document.getElementById('chipTableCard').style.display = isDaily ? "block" : "none";
                     
-                    // 填入籌碼表格
                     if (isDaily && data.chip_table) {
                         const tbody = document.getElementById('chipTableBody');
                         tbody.innerHTML = data.chip_table.map(r => {
@@ -208,8 +207,8 @@
                         }).join('');
                     }
                     
-                    document.getElementById('f-eps').innerText = data.fundamental.eps;
-                    document.getElementById('f-pe').innerText = data.fundamental.pe_ratio;
+                    document.getElementById('f-eps').innerText = data.fundamental.eps || '--';
+                    document.getElementById('f-pe').innerText = data.fundamental.pe_ratio || '--';
                     
                     let epsVal = parseFloat(data.fundamental.eps);
                     let peVal = parseFloat(data.fundamental.pe_ratio);
@@ -219,7 +218,9 @@
 
                     const ai = data.ai_analysis;
                     document.getElementById('ai-signal').innerText = ai.signal || '--';
-                    document.getElementById('ai-signal').style.color = (ai.signal.includes('多') || ai.signal.includes('強')) ? 'var(--red)' : ((ai.signal.includes('空') || ai.signal.includes('弱')) ? 'var(--green)' : 'var(--orange)');
+                    if(ai.signal) {
+                        document.getElementById('ai-signal').style.color = (ai.signal.includes('多') || ai.signal.includes('強')) ? 'var(--red)' : ((ai.signal.includes('空') || ai.signal.includes('弱')) ? 'var(--green)' : 'var(--orange)');
+                    }
                     
                     document.getElementById('ai-pressure').innerText = ai.pressure || '--';
                     document.getElementById('ai-support').innerText = ai.support || '--';
@@ -285,7 +286,6 @@
             seriesDict.candle = charts.main.addCandlestickSeries({ upColor: '#ef5350', downColor: '#26a69a', borderVisible: false, wickUpColor: '#ef5350', wickDownColor: '#26a69a' });
             seriesDict.candle.setData(data.chart_data);
 
-            // 加上均線
             seriesDict.ma5 = charts.main.addLineSeries({ color: '#fdd835', lineWidth: 1, crosshairMarkerVisible: false });
             seriesDict.ma5.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma5 })));
             seriesDict.ma20 = charts.main.addLineSeries({ color: '#ff4081', lineWidth: 1, crosshairMarkerVisible: false });
@@ -293,7 +293,6 @@
             seriesDict.ma60 = charts.main.addLineSeries({ color: '#00bcd4', lineWidth: 1, crosshairMarkerVisible: false });
             seriesDict.ma60.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma60 })));
 
-            // 浮動圖例與均線標籤同步
             const legend = document.getElementById('chartLegend');
             const lma5 = document.getElementById('l-ma5');
             const lma20 = document.getElementById('l-ma20');
