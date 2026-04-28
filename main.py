@@ -1,10 +1,12 @@
 import os
 import json
 import datetime
+import traceback
 from flask import Flask, request, jsonify
 from flask_cors import CORS 
 import yfinance as yf
 import pandas as pd
+import numpy as np  # 新增：用於處理無限大等數學防呆
 import google.generativeai as genai
 from FinMind.data import DataLoader
 
@@ -15,7 +17,7 @@ genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
 
 @app.route('/')
 def home():
-    return "AI 戰情室大腦運轉中！(籌碼圖表模組已掛載)"
+    return "AI 戰情室大腦運轉中！(具備工業級防護)"
 
 @app.route('/predict', methods=['GET'])
 def predict():
@@ -25,7 +27,7 @@ def predict():
         stock = yf.Ticker(symbol)
         df = stock.history(period="6mo")
         if df.empty:
-            return jsonify({"status": "error", "message": "找不到股票數據"}), 400
+            return jsonify({"status": "error", "message": f"無法從資料庫獲取 {symbol} 的數據，請確認代碼或稍後再試。"}), 400
 
         # 計算 MACD 與 KD
         df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
@@ -36,7 +38,10 @@ def predict():
 
         df['9_high'] = df['High'].rolling(9).max()
         df['9_low'] = df['Low'].rolling(9).min()
+        
+        # 【防呆機制】：避免股價不動時，除以零產生無限大 (inf) 導致系統崩潰
         df['RSV'] = (df['Close'] - df['9_low']) / (df['9_high'] - df['9_low']) * 100
+        df['RSV'] = df['RSV'].replace([np.inf, -np.inf], np.nan)
         
         rsv_list = df['RSV'].fillna(50).tolist()
         K, D = [], []
@@ -51,7 +56,9 @@ def predict():
         df['K'] = K
         df['D'] = D
         
-        df_chart = df.dropna().tail(60)
+        # 強制填補所有空值，確保 JSON 格式正確
+        df = df.fillna(0)
+        df_chart = df.tail(60)
         
         chart_data, macd_data, kd_data = [], [], []
         for date, row in df_chart.iterrows():
@@ -69,32 +76,26 @@ def predict():
         except:
             display_name = symbol
             
-        # === 【籌碼圖表數據打包引擎】 ===
+        # 籌碼數據抓取
         pure_symbol = symbol.replace('.TW', '').replace('.TWO', '')
         chip_info = "無法取得籌碼資料"
-        chip_chart_data = [] # 準備給前端畫圖的陣列
-        
+        chip_chart_data = []
         try:
             dl = DataLoader()
-            # 抓取近 60 天確保圖表長度足夠
             start_date = (datetime.datetime.now() - datetime.timedelta(days=90)).strftime('%Y-%m-%d')
             df_chips = dl.taiwan_stock_institutional_investors(stock_id=pure_symbol, start_date=start_date)
             
-            if not df_chips.empty:
+            if isinstance(df_chips, pd.DataFrame) and not df_chips.empty:
                 df_chips['net_buy'] = df_chips['buy'] - df_chips['sell']
                 chip_info = df_chips[['date', 'name', 'net_buy']].tail(40).to_string()
-                
-                # 將每天的「外資+投信+自營商」加總，並把單位轉換為「張」
                 daily_chips = df_chips.groupby('date')['net_buy'].sum().reset_index()
-                
                 for _, r in daily_chips.iterrows():
                     chip_chart_data.append({
-                        "time": r['date'],
-                        "value": round(float(r['net_buy']) / 1000, 2) # 除以1000轉為張數
+                        "time": str(r['date']),
+                        "value": round(float(r['net_buy']) / 1000, 2)
                     })
         except Exception as e:
             print("籌碼抓取失敗:", e)
-        # ==============================
 
         # 2. 智慧篩選模型
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
@@ -102,28 +103,28 @@ def predict():
         target_model = flash_15_models[0] if flash_15_models else (available_models[0] if available_models else 'gemini-1.5-flash')
         model = genai.GenerativeModel(target_model)
         
-        # 3. AI 提示詞
         prompt = (
-            f"你是一位擁有 20 年經驗的台股操盤手。請針對 {display_name} 的技術面與「三大法人籌碼面」數據進行分析。\n"
-            f"【極重要指示】：\n"
-            f"你必須以純 JSON 格式輸出結果，絕對不要包含任何 Markdown 標記。\n"
-            f"JSON 的 Key 必須嚴格包含以下五個項目：\n"
-            f"1. \"trend\" (字串，判斷目前趨勢)\n"
-            f"2. \"pressure\" (數字，近期的關鍵壓力價位)\n"
-            f"3. \"support\" (數字，近期的關鍵支撐價位)\n"
-            f"4. \"summary\" (字串，100字以內的技術面與『法人籌碼動向』總結)\n"
-            f"5. \"action\" (字串，具體的操作建議)\n\n"
-            f"【技術面數據】：\n{latest_data}\n\n"
-            f"【籌碼面數據 (三大法人淨買賣超)】：\n{chip_info}"
+            f"你是一位擁有 20 年經驗的台股操盤手。請針對 {display_name} 的數據進行分析。\n"
+            f"必須以純 JSON 格式輸出結果，絕不包含 Markdown 標記。\n"
+            f"Key 包含：trend, pressure, support, summary, action。\n\n"
+            f"技術面：\n{latest_data}\n\n"
+            f"籌碼面：\n{chip_info}"
         )
         
-        response = model.generate_content(prompt)
-        
+        # 【防呆機制】：AI 當機時的安全網
         try:
+            response = model.generate_content(prompt)
             raw_text = response.text.replace("```json", "").replace("```", "").strip()
             ai_data = json.loads(raw_text)
-        except:
-            ai_data = {"trend": "解析失敗", "pressure": 0, "support": 0, "summary": "AI 回傳異常。", "action": "暫停操作"}
+        except Exception as ai_err:
+            print("AI 解析錯誤:", ai_err)
+            ai_data = {
+                "trend": "AI 暫停服務", 
+                "pressure": 0, 
+                "support": 0, 
+                "summary": "Google AI 伺服器目前繁忙或回傳格式異常，但圖表數據已為您載入。", 
+                "action": "請稍後重新點擊分析"
+            }
         
         return jsonify({
             "status": "success",
@@ -132,11 +133,14 @@ def predict():
             "chart_data": chart_data,
             "macd_data": macd_data,
             "kd_data": kd_data,
-            "chip_data": chip_chart_data, # 把籌碼資料送給前端
+            "chip_data": chip_chart_data,
             "ai_analysis": ai_data
         })
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        # 將真實錯誤印在 Render 後台，並把具體原因傳給前端網頁
+        error_details = traceback.format_exc()
+        print("伺服器嚴重錯誤:\n", error_details)
+        return jsonify({"status": "error", "message": f"內部錯誤: {str(e)}"}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
