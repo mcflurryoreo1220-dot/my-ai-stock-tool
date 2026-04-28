@@ -6,7 +6,7 @@
     <title>AI 股票戰情室 - 旗艦估值版</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
-        :root { --bg-dark: #050810; --panel-bg: #111520; --border-color: #232b3e; --text-main: #d1d4dc; --text-muted: #787b86; --blue: #2962ff; --red: #ef5350; --green: #26a69a; --orange: #ff9800; }
+        :root { --bg-dark: #050810; --panel-bg: #111520; --border-color: #232b3e; --text-main: #d1d4dc; --text-muted: #787b86; --blue: #2962ff; --red: #ef5350; --green: #26a69a; --orange: #ff9800; --ma5: #fdd835; --ma20: #ff4081; --ma60: #00bcd4; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg-dark); color: var(--text-main); margin: 0; padding: 15px; }
         
         .top-bar { display: flex; justify-content: space-between; align-items: center; background: var(--panel-bg); padding: 15px 20px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 15px; }
@@ -24,7 +24,10 @@
         
         .chart-wrapper { background: var(--panel-bg); padding: 5px; border-radius: 8px; border: 1px solid var(--border-color); }
         .chart-box { position: relative; width: 100%; }
-        .chart-title { position: absolute; z-index: 2; padding: 3px 6px; font-size: 11px; background: rgba(0,0,0,0.6); color: #fff; top: 5px; left: 5px; }
+        .chart-title { position: absolute; z-index: 2; padding: 3px 6px; font-size: 11px; background: rgba(0,0,0,0.6); color: #fff; top: 5px; left: 5px; display: flex; gap: 10px; align-items: center; }
+        /* 均線標籤樣式 */
+        .legend-ma5 { color: var(--ma5); } .legend-ma20 { color: var(--ma20); } .legend-ma60 { color: var(--ma60); }
+        
         .chart-legend { position: absolute; z-index: 10; font-size: 12px; color: #fff; background: rgba(0,0,0,0.7); border-radius: 4px; top: 30px; left: 5px; padding: 5px; display: none; }
         #mainChart { height: 350px; } .sub-chart { height: 120px; }
         
@@ -36,19 +39,22 @@
         .f-val { font-size: 16px; font-weight: bold; color: white; margin-top: 5px; }
         .stars { color: var(--orange); font-size: 20px; }
         
+        /* 籌碼表格樣式 */
+        .chip-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; margin-top: 5px; }
+        .chip-table th { background: #0b0e14; padding: 6px; color: var(--text-muted); border-bottom: 1px solid var(--border-color); font-weight: normal; }
+        .chip-table td { padding: 6px; border-bottom: 1px solid #1a1e29; }
+        .txt-red { color: var(--red); } .txt-green { color: var(--green); }
+
         .quant-panel { display: flex; justify-content: space-around; background: var(--panel-bg); padding: 15px; border-radius: 8px; border: 1px dashed var(--blue); }
         .quant-item { text-align: center; }
         .quant-item .label { font-size: 12px; color: var(--text-muted); margin-bottom: 5px; }
         .quant-item .val { font-size: 22px; font-weight: bold; font-family: monospace; color: white; }
 
-        /* 自訂滑桿樣式 */
         input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; margin: 10px 0; }
         input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: var(--blue); cursor: pointer; margin-top: -6px; box-shadow: 0 0 5px rgba(41, 98, 255, 0.5); }
         input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: var(--border-color); border-radius: 2px; }
 
-        table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 15px; background: var(--panel-bg); border-radius: 8px; border: 1px solid var(--border-color); padding: 15px; }
-        th, td { padding: 10px; text-align: left; border-bottom: 1px solid var(--border-color); }
-        .profit { color: var(--red); } .loss { color: var(--green); }
+        #sysMessage { margin-bottom: 15px; font-size: 14px; }
     </style>
 </head>
 <body>
@@ -63,7 +69,6 @@
         <div class="price-zone" id="priceZone">
             <div id="stockTitle" style="font-weight:bold; font-size:24px;">--</div>
             <div class="current-price" id="currentPriceDisplay">0.00</div>
-            <button style="background:var(--orange); font-size:13px; padding:8px 15px;" onclick="buyStock()">加入模擬倉</button>
         </div>
     </div>
     
@@ -77,18 +82,36 @@
                 <div class="quant-item"><div class="label">累計報酬率</div><div class="val" id="bt-return">0%</div></div>
             </div>
             <div class="chart-wrapper">
-                <div class="chart-box"><div class="chart-title" id="mainChartTitle">K線</div><div class="chart-legend" id="chartLegend"></div><div id="mainChart"></div></div>
+                <div class="chart-box">
+                    <div class="chart-title">
+                        <span id="mainChartTitle">K線</span>
+                        <span class="legend-ma5" id="l-ma5">MA5: --</span>
+                        <span class="legend-ma20" id="l-ma20">MA20: --</span>
+                        <span class="legend-ma60" id="l-ma60">MA60: --</span>
+                    </div>
+                    <div class="chart-legend" id="chartLegend"></div>
+                    <div id="mainChart"></div>
+                </div>
                 <div class="chart-box"><div class="chart-title">MACD (12,26,9)</div><div id="macdChart" class="sub-chart"></div></div>
                 <div class="chart-box"><div class="chart-title">KD (9,3,3)</div><div id="kdChart" class="sub-chart"></div></div>
                 <div class="chart-box"><div class="chart-title">OBV (能量潮)</div><div id="obvChart" class="sub-chart"></div></div>
                 <div class="chart-box" id="chipBox"><div class="chart-title">三大法人買賣超</div><div id="chipChart" class="sub-chart"></div></div>
             </div>
         </div>
+        
         <div class="right-col">
             <div class="info-card" style="text-align:center;">
                 <div class="card-header" style="justify-content:center;">AI 綜合評估</div>
                 <div id="ai-signal" style="font-size:22px; font-weight:bold; margin-bottom:5px;">--</div>
                 <div class="stars" id="ai-stars">☆☆☆☆☆</div>
+            </div>
+
+            <div class="info-card" id="chipTableCard">
+                <div class="card-header">三大法人近 10 日買賣超 (張)</div>
+                <table class="chip-table">
+                    <thead><tr><th>日期</th><th>外資</th><th>投信</th><th>自營</th><th>合計</th></tr></thead>
+                    <tbody id="chipTableBody"></tbody>
+                </table>
             </div>
             
             <div class="info-card">
@@ -96,8 +119,6 @@
                 <div class="f-grid">
                     <div class="f-item"><div class="f-label">過去四季 EPS</div><div class="f-val" id="f-eps">--</div></div>
                     <div class="f-item"><div class="f-label">目前本益比 (P/E)</div><div class="f-val" id="f-pe">--</div></div>
-                    <div class="f-item"><div class="f-label">殖利率</div><div class="f-val" id="f-yield">--</div></div>
-                    <div class="f-item"><div class="f-label">總市值</div><div class="f-val" id="f-cap">--</div></div>
                 </div>
             </div>
 
@@ -105,20 +126,18 @@
                 <div class="card-header" style="color: var(--blue);">📊 動態估值計算器</div>
                 <div style="margin-bottom: 15px;">
                     <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                        <span style="font-size:12px; color:var(--text-muted)">1. 預估未來 EPS (元)</span>
-                        <span id="calc-eps-val" style="font-weight:bold; color:#fff">0.00</span>
+                        <span style="font-size:12px; color:var(--text-muted)">1. 預估未來 EPS (元)</span><span id="calc-eps-val" style="font-weight:bold; color:#fff">0.00</span>
                     </div>
                     <input type="range" id="slider-eps" min="0" max="150" step="0.5" value="0" oninput="updateCalc()">
                 </div>
                 <div style="margin-bottom: 15px;">
                     <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                        <span style="font-size:12px; color:var(--text-muted)">2. 目標本益比 (市場熱度)</span>
-                        <span id="calc-pe-val" style="font-weight:bold; color:#fff">15.0</span>
+                        <span style="font-size:12px; color:var(--text-muted)">2. 目標本益比</span><span id="calc-pe-val" style="font-weight:bold; color:#fff">15.0</span>
                     </div>
                     <input type="range" id="slider-pe" min="5" max="80" step="1" value="15" oninput="updateCalc()">
                 </div>
                 <div style="background:#0b0e14; padding:15px; border-radius:6px; text-align:center; border: 1px solid var(--border-color);">
-                    <div style="font-size:12px; color:var(--text-muted); margin-bottom:5px;">合理股價推算 (EPS × P/E)</div>
+                    <div style="font-size:12px; color:var(--text-muted); margin-bottom:5px;">合理股價推算</div>
                     <div id="calc-result" style="font-size:28px; font-weight:bold; color:var(--blue); font-family:monospace;">--</div>
                     <div id="calc-status" style="font-size:14px; margin-top:8px; font-weight:bold;">--</div>
                 </div>
@@ -139,20 +158,10 @@
         </div>
     </div>
 
-    <div style="margin-top:20px;">
-        <h3 style="color:var(--text-main); margin-bottom:10px;">我的模擬倉</h3>
-        <table id="portfolioTable">
-            <thead><tr><th>標的</th><th>買入</th><th>現價</th><th>損益</th><th>操作</th></tr></thead>
-            <tbody id="portfolioBody"></tbody>
-        </table>
-    </div>
-
     <script>
         let charts = {};
-        let currentCandleSeries = null;
+        let seriesDict = {};
         let currentAnalysis = { symbol: '', price: 0 };
-        let portfolio = JSON.parse(localStorage.getItem('myPortfolio')) || [];
-        renderPortfolio();
 
         async function analyze() {
             const symbolInput = document.getElementById('symbol').value.trim();
@@ -169,37 +178,49 @@
             
             try {
                 const res = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${symbol}&interval=${interval}`);
-                if (!res.ok) throw new Error(`伺服器異常 (${res.status})`);
+                if (!res.ok) throw new Error(`伺服器異常`);
                 const data = await res.json();
                 
                 if(data.status === "success") {
                     sysMsg.innerHTML = "";
-                    currentAnalysis.symbol = data.symbol;
-                    currentAnalysis.price = data.current_price;
+                    currentAnalysis.symbol = data.symbol; currentAnalysis.price = data.current_price;
                     document.getElementById('mainGrid').style.display = "grid";
                     document.getElementById('priceZone').style.display = "flex";
                     document.getElementById('stockTitle').innerText = data.symbol.replace('.TW', '');
                     document.getElementById('currentPriceDisplay').innerText = data.current_price;
                     
-                    document.getElementById('mainChartTitle').innerText = `${document.getElementById('intervalSelector').options[document.getElementById('intervalSelector').selectedIndex].text} (訊號標記)`;
-                    document.getElementById('chipBox').style.display = (data.interval === '1d') ? "block" : "none";
+                    document.getElementById('mainChartTitle').innerText = `${document.getElementById('intervalSelector').options[document.getElementById('intervalSelector').selectedIndex].text}`;
                     
-                    // 填充基本面
+                    // 顯示或隱藏籌碼區塊
+                    const isDaily = (data.interval === '1d');
+                    document.getElementById('chipBox').style.display = isDaily ? "block" : "none";
+                    document.getElementById('chipTableCard').style.display = isDaily ? "block" : "none";
+                    
+                    // 填入籌碼表格
+                    if (isDaily && data.chip_table) {
+                        const tbody = document.getElementById('chipTableBody');
+                        tbody.innerHTML = data.chip_table.map(r => {
+                            const fColor = r.foreign > 0 ? 'txt-red' : (r.foreign < 0 ? 'txt-green' : '');
+                            const tColor = r.trust > 0 ? 'txt-red' : (r.trust < 0 ? 'txt-green' : '');
+                            const dColor = r.dealer > 0 ? 'txt-red' : (r.dealer < 0 ? 'txt-green' : '');
+                            const totColor = r.total > 0 ? 'txt-red' : (r.total < 0 ? 'txt-green' : '');
+                            return `<tr><td>${r.date}</td><td class="${fColor}">${r.foreign}</td><td class="${tColor}">${r.trust}</td><td class="${dColor}">${r.dealer}</td><td class="${totColor}" style="font-weight:bold;">${r.total}</td></tr>`;
+                        }).join('');
+                    }
+                    
                     document.getElementById('f-eps').innerText = data.fundamental.eps;
                     document.getElementById('f-pe').innerText = data.fundamental.pe_ratio;
-                    document.getElementById('f-yield').innerText = data.fundamental.dividend_yield;
-                    document.getElementById('f-cap').innerText = data.fundamental.market_cap;
                     
-                    // 初始化估值計算器
                     let epsVal = parseFloat(data.fundamental.eps);
                     let peVal = parseFloat(data.fundamental.pe_ratio);
                     document.getElementById('slider-eps').value = (!isNaN(epsVal) && epsVal > 0) ? epsVal : 0;
                     document.getElementById('slider-pe').value = (!isNaN(peVal) && peVal > 0 && peVal < 80) ? peVal : 15;
-                    updateCalc(); // 執行第一次計算
+                    updateCalc();
 
-                    // 填充 AI 分析
                     const ai = data.ai_analysis;
                     document.getElementById('ai-signal').innerText = ai.signal || '--';
+                    document.getElementById('ai-signal').style.color = (ai.signal.includes('多') || ai.signal.includes('強')) ? 'var(--red)' : ((ai.signal.includes('空') || ai.signal.includes('弱')) ? 'var(--green)' : 'var(--orange)');
+                    
                     document.getElementById('ai-pressure').innerText = ai.pressure || '--';
                     document.getElementById('ai-support').innerText = ai.support || '--';
                     let stars = parseInt(ai.stars) || 3;
@@ -209,35 +230,25 @@
 
                     runBacktest(data.chart_data, data.kd_data);
                     renderCharts(data);
-                    updatePortfolioPrices();
                 } else { sysMsg.innerHTML = `<span style="color:var(--red);">❌ 分析出錯：${data.message}</span>`; }
             } catch(e) { sysMsg.innerHTML = `<span style="color:var(--red);">❌ 連線失敗：${e.message}</span>`; }
             finally { btn.disabled = false; btn.innerText = "啟動全盤掃描"; }
         }
 
-        // 動態估值計算邏輯
         function updateCalc() {
             let eps = parseFloat(document.getElementById('slider-eps').value);
             let pe = parseFloat(document.getElementById('slider-pe').value);
             document.getElementById('calc-eps-val').innerText = eps.toFixed(2);
             document.getElementById('calc-pe-val').innerText = pe.toFixed(1);
-
             let targetPrice = eps * pe;
             document.getElementById('calc-result').innerText = targetPrice.toFixed(2);
 
             if(currentAnalysis.price > 0) {
                 let diff = ((targetPrice - currentAnalysis.price) / currentAnalysis.price) * 100;
                 let statusEl = document.getElementById('calc-status');
-                if(diff > 10) {
-                    statusEl.innerText = `📈 潛在空間: +${diff.toFixed(1)}% (股價委屈)`;
-                    statusEl.style.color = "var(--red)"; // 台股紅漲
-                } else if(diff < -10) {
-                    statusEl.innerText = `📉 溢價風險: ${diff.toFixed(1)}% (股價過熱)`;
-                    statusEl.style.color = "var(--green)"; // 台股綠跌
-                } else {
-                    statusEl.innerText = `⚖️ 目前處於合理估值區間`;
-                    statusEl.style.color = "var(--orange)";
-                }
+                if(diff > 10) { statusEl.innerText = `📈 潛在空間: +${diff.toFixed(1)}%`; statusEl.style.color = "var(--red)"; } 
+                else if(diff < -10) { statusEl.innerText = `📉 溢價風險: ${diff.toFixed(1)}%`; statusEl.style.color = "var(--green)"; } 
+                else { statusEl.innerText = `⚖️ 目前處於合理估值`; statusEl.style.color = "var(--orange)"; }
             }
         }
 
@@ -250,15 +261,12 @@
                 if(!cp) continue;
                 if (!holding && p.k <= p.d && c.k > c.d) { holding = true; buyPrice = cp; }
                 else if (holding && p.k >= p.d && c.k < c.d) {
-                    holding = false;
-                    let ret = ((cp - buyPrice) / buyPrice) * 100;
-                    totalReturn += ret;
+                    holding = false; let ret = ((cp - buyPrice) / buyPrice) * 100; totalReturn += ret;
                     if (ret > 0) wins++; else losses++;
                 }
             }
             if (holding) {
-                let ret = ((klineData[klineData.length-1].close - buyPrice) / buyPrice) * 100;
-                totalReturn += ret;
+                let ret = ((klineData[klineData.length-1].close - buyPrice) / buyPrice) * 100; totalReturn += ret;
                 if (ret > 0) wins++; else losses++;
             }
             let total = wins + losses;
@@ -274,21 +282,37 @@
             const opt = { layout: { background: { color: '#111520' }, textColor: '#787b86' }, grid: { vertLines: { color: '#232b3e' }, horzLines: { color: '#232b3e' } }, crosshair: { mode: LightweightCharts.CrosshairMode.Normal }, timeScale: { visible: false, timeVisible: iv !== '1d' } };
 
             charts.main = LightweightCharts.createChart(document.getElementById('mainChart'), { ...opt, height: 350 });
-            currentCandleSeries = charts.main.addCandlestickSeries({ upColor: '#ef5350', downColor: '#26a69a', borderVisible: false, wickUpColor: '#ef5350', wickDownColor: '#26a69a' });
-            currentCandleSeries.setData(data.chart_data);
+            seriesDict.candle = charts.main.addCandlestickSeries({ upColor: '#ef5350', downColor: '#26a69a', borderVisible: false, wickUpColor: '#ef5350', wickDownColor: '#26a69a' });
+            seriesDict.candle.setData(data.chart_data);
 
+            // 加上均線
+            seriesDict.ma5 = charts.main.addLineSeries({ color: '#fdd835', lineWidth: 1, crosshairMarkerVisible: false });
+            seriesDict.ma5.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma5 })));
+            seriesDict.ma20 = charts.main.addLineSeries({ color: '#ff4081', lineWidth: 1, crosshairMarkerVisible: false });
+            seriesDict.ma20.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma20 })));
+            seriesDict.ma60 = charts.main.addLineSeries({ color: '#00bcd4', lineWidth: 1, crosshairMarkerVisible: false });
+            seriesDict.ma60.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma60 })));
+
+            // 浮動圖例與均線標籤同步
             const legend = document.getElementById('chartLegend');
+            const lma5 = document.getElementById('l-ma5');
+            const lma20 = document.getElementById('l-ma20');
+            const lma60 = document.getElementById('l-ma60');
+
             charts.main.subscribeCrosshairMove(param => {
-                if (param.time && param.seriesData.get(currentCandleSeries)) {
-                    const p = param.seriesData.get(currentCandleSeries);
+                if (param.time && param.seriesData.get(seriesDict.candle)) {
+                    const p = param.seriesData.get(seriesDict.candle);
                     let tStr = param.time;
                     if (typeof param.time === 'number') {
-                        const d = new Date(param.time * 1000);
-                        tStr = d.toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+                        tStr = new Date(param.time * 1000).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
                     }
                     legend.style.display = 'block';
                     legend.innerHTML = `${tStr} | 開 <span style="color:#fff">${p.open}</span> | 高 <span style="color:var(--red)">${p.high}</span> | 低 <span style="color:var(--green)">${p.low}</span> | 收 <span style="color:#ff9800">${p.close}</span>`;
-                } else legend.style.display = 'none';
+                    
+                    const m5 = param.seriesData.get(seriesDict.ma5); lma5.innerText = `MA5: ${m5 ? m5.value.toFixed(2) : '--'}`;
+                    const m20 = param.seriesData.get(seriesDict.ma20); lma20.innerText = `MA20: ${m20 ? m20.value.toFixed(2) : '--'}`;
+                    const m60 = param.seriesData.get(seriesDict.ma60); lma60.innerText = `MA60: ${m60 ? m60.value.toFixed(2) : '--'}`;
+                } else { legend.style.display = 'none'; }
             });
 
             if (data.kd_data && data.kd_data.length > 1) {
@@ -298,7 +322,7 @@
                     if (p.k <= p.d && c.k > c.d) markers.push({ time: c.time, position: 'belowBar', color: '#ef5350', shape: 'arrowUp', text: '買' });
                     else if (p.k >= p.d && c.k < c.d) markers.push({ time: c.time, position: 'aboveBar', color: '#26a69a', shape: 'arrowDown', text: '賣' });
                 }
-                currentCandleSeries.setMarkers(markers);
+                seriesDict.candle.setMarkers(markers);
             }
 
             charts.macd = LightweightCharts.createChart(document.getElementById('macdChart'), { ...opt, height: 120 });
@@ -323,25 +347,6 @@
             const sync = (s, t) => { s.timeScale().subscribeVisibleTimeRangeChange(r => { t.forEach(x => x.timeScale().setVisibleRange(r)); }); };
             allCharts.forEach(s => sync(s, allCharts.filter(c => c !== s)));
             charts.main.timeScale().fitContent();
-        }
-
-        function buyStock() { if(!currentAnalysis.symbol) return; portfolio.push({ symbol: currentAnalysis.symbol, buyPrice: currentAnalysis.price, currentPrice: currentAnalysis.price }); saveAndRender(); }
-        function sellStock(index) { portfolio.splice(index, 1); saveAndRender(); }
-        function saveAndRender() { localStorage.setItem('myPortfolio', JSON.stringify(portfolio)); renderPortfolio(); }
-        function renderPortfolio() {
-            const tbody = document.getElementById('portfolioBody'); tbody.innerHTML = '';
-            if(portfolio.length === 0) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">目前無持股</td></tr>'; return; }
-            portfolio.forEach((item, index) => {
-                const pl = ((item.currentPrice - item.buyPrice) / item.buyPrice) * 100;
-                const plText = pl >= 0 ? `+${pl.toFixed(2)}%` : `${pl.toFixed(2)}%`;
-                tbody.innerHTML += `<tr><td style="color:white; font-weight:bold;">${item.symbol.replace('.TW','')}</td><td>${item.buyPrice.toFixed(2)}</td><td>${parseFloat(item.currentPrice).toFixed(2)}</td><td class="${pl>=0?'profit':'loss'}" style="font-weight:bold;">${plText}</td><td><button style="background:var(--red); color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="sellStock(${index})">平</button></td></tr>`;
-            });
-        }
-        async function updatePortfolioPrices() {
-            for (let i = 0; i < portfolio.length; i++) {
-                try { const res = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${portfolio[i].symbol}`); if(res.ok) { const data = await res.json(); if(data.status === "success") portfolio[i].currentPrice = data.current_price; } } catch(e) {}
-            }
-            saveAndRender();
         }
     </script>
 </body>
