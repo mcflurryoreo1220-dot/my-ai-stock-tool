@@ -17,19 +17,17 @@ genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
 
 @app.route('/')
 def home():
-    return "AI 戰情室大腦運轉中！(具備暴力 JSON 過濾與量化訊號功能)"
+    return "AI 戰情室大腦運轉中！(具備星級評分與路徑預測功能)"
 
 @app.route('/predict', methods=['GET'])
 def predict():
     symbol = request.args.get('symbol', '2330.TW')
     try:
-        # 1. 抓取技術面數據
         stock = yf.Ticker(symbol)
         df = stock.history(period="6mo")
         if df.empty:
-            return jsonify({"status": "error", "message": f"無法從資料庫獲取 {symbol} 的數據，請確認代碼。"}), 400
+            return jsonify({"status": "error", "message": f"無法獲取 {symbol} 數據。"}), 400
 
-        # 計算 MACD 與 KD
         df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
         df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
         df['DIF'] = df['EMA12'] - df['EMA26']
@@ -38,8 +36,6 @@ def predict():
 
         df['9_high'] = df['High'].rolling(9).max()
         df['9_low'] = df['Low'].rolling(9).min()
-        
-        # 數學防呆機制
         df['RSV'] = (df['Close'] - df['9_low']) / (df['9_high'] - df['9_low']) * 100
         df['RSV'] = df['RSV'].replace([np.inf, -np.inf], np.nan)
         
@@ -52,7 +48,6 @@ def predict():
             K.append(curr_k)
             D.append(curr_d)
             prev_k, prev_d = curr_k, curr_d
-        
         df['K'] = K
         df['D'] = D
         
@@ -75,88 +70,67 @@ def predict():
         except:
             display_name = symbol
             
-        # 籌碼數據抓取
         pure_symbol = symbol.replace('.TW', '').replace('.TWO', '')
-        chip_info = "無法取得籌碼資料"
+        chip_info = "無籌碼資料"
         chip_chart_data = []
         try:
             dl = DataLoader()
             start_date = (datetime.datetime.now() - datetime.timedelta(days=90)).strftime('%Y-%m-%d')
             df_chips = dl.taiwan_stock_institutional_investors(stock_id=pure_symbol, start_date=start_date)
-            
             if isinstance(df_chips, pd.DataFrame) and not df_chips.empty:
                 df_chips['net_buy'] = df_chips['buy'] - df_chips['sell']
                 chip_info = df_chips[['date', 'name', 'net_buy']].tail(40).to_string()
                 daily_chips = df_chips.groupby('date')['net_buy'].sum().reset_index()
                 for _, r in daily_chips.iterrows():
-                    chip_chart_data.append({
-                        "time": str(r['date']),
-                        "value": round(float(r['net_buy']) / 1000, 2)
-                    })
+                    chip_chart_data.append({"time": str(r['date']), "value": round(float(r['net_buy']) / 1000, 2)})
         except Exception as e:
-            print("籌碼抓取失敗:", e)
+            pass
 
-        # 2. 智慧篩選模型
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         flash_15_models = [m for m in available_models if '1.5-flash' in m]
         target_model = flash_15_models[0] if flash_15_models else (available_models[0] if available_models else 'gemini-1.5-flash')
         model = genai.GenerativeModel(target_model)
         
-        # 3. AI 提示詞
+        # 【藍圖級 AI 提示詞】：要求輸出路徑與星級
         prompt = (
-            f"你是一位台股頂級量化操盤手。請針對 {display_name} 進行分析。\n"
-            f"【極重要指示】：\n"
-            f"必須只輸出純 JSON 格式，絕對不可包含任何其他閒聊文字或 Markdown 標記。\n"
-            f"所有文字必須『極度精簡、一針見血』，像軍事匯報一樣！\n"
-            f"JSON 格式嚴格規定如下：\n"
-            f"1. \"trend\": 字串，限 10 字以內，如「均線下彎，籌碼渙散」。\n"
-            f"2. \"pressure\": 字串，給出價位與極簡原因，如「93.0 (前高)」。\n"
-            f"3. \"support\": 字串，給出價位與極簡原因，如「86.0 (季線)」。\n"
-            f"4. \"action\": 字串，限 15 字以內，如「空手觀望，等待落底」。\n"
-            f"5. \"summary\": 字串，限 3 句話，總結技術與籌碼狀態，禁用列點符號。\n\n"
+            f"你是台股頂級量化操盤手。請分析 {display_name}。\n"
+            f"必須只輸出純 JSON，不可有 Markdown。\n"
+            f"JSON 格式嚴格規定：\n"
+            f"1. \"signal\": 4字以內，如「短線偏多」或「觀望」\n"
+            f"2. \"pressure\": 數字或短字串，如「220.5」\n"
+            f"3. \"support\": 數字或短字串，如「195.0」\n"
+            f"4. \"stop_loss\": 數字或短字串，如「190.0」\n"
+            f"5. \"path_up\": 若上漲的可能路徑(限15字)\n"
+            f"6. \"path_down\": 若下跌的可能路徑(限15字)\n"
+            f"7. \"stars\": 1到5的整數，代表綜合推薦星級\n"
+            f"8. \"advice\": 陣列包含3個字串，每個字串為一句簡短操作建議(限15字)\n\n"
             f"【技術面】：\n{latest_data}\n\n"
             f"【籌碼面】：\n{chip_info}"
         )
         
         try:
-            # 加入 temperature=0.1 讓 AI 回答更死板、更穩定，不亂加廢話
             response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.1))
             text = response.text
-            
-            # 【終極防護】：暴力提取 JSON 區塊
             start = text.find('{')
             end = text.rfind('}')
             if start != -1 and end != -1:
-                json_str = text[start:end+1]
-                ai_data = json.loads(json_str)
+                ai_data = json.loads(text[start:end+1])
             else:
-                raise ValueError("找不到 JSON 括號")
-                
-        except Exception as ai_err:
-            print("AI 解析錯誤:", ai_err)
+                raise ValueError("JSON格式錯誤")
+        except:
             ai_data = {
-                "trend": "AI 暫停服務", 
-                "pressure": "--", 
-                "support": "--", 
-                "summary": "AI 輸出格式異常或連線超時，但圖表與量化訊號已為您載入。", 
-                "action": "請稍後重新分析"
+                "signal": "解析失敗", "pressure": "--", "support": "--", "stop_loss": "--",
+                "path_up": "資料異常", "path_down": "資料異常", "stars": 0,
+                "advice": ["伺服器繁忙", "請稍後重試", "圖表已載入"]
             }
         
         return jsonify({
-            "status": "success",
-            "symbol": symbol,
-            "current_price": current_price,
-            "chart_data": chart_data,
-            "macd_data": macd_data,
-            "kd_data": kd_data,
-            "chip_data": chip_chart_data,
+            "status": "success", "symbol": symbol, "current_price": current_price,
+            "chart_data": chart_data, "macd_data": macd_data, "kd_data": kd_data, "chip_data": chip_chart_data,
             "ai_analysis": ai_data
         })
     except Exception as e:
-        error_details = traceback.format_exc()
-        print("伺服器嚴重錯誤:\n", error_details)
         return jsonify({"status": "error", "message": f"內部錯誤: {str(e)}"}), 500
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
