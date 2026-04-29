@@ -20,20 +20,18 @@ if api_key:
 
 @app.route('/')
 def home():
-    return "AI 戰情室大腦運轉中！(搭載高階防呆、1分K與豐富戰報模組)"
+    return "AI 戰情室大腦運轉中！(搭載閃電 Flash 主引擎破除超時限制)"
 
 @app.route('/predict', methods=['GET'])
 def predict():
     symbol = request.args.get('symbol', '2330.TW')
     interval = request.args.get('interval', '1d')
     
-    # 確保傳入的 interval 是 yfinance 支援的格式 (攔截不支援的 3m)
     valid_intervals = ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h', '1d', '5d', '1wk', '1mo', '3mo']
     if interval not in valid_intervals:
         interval = '1d'
 
     try:
-        # 依據頻率設定抓取期間
         if interval in ['1m', '2m', '5m']:
             period = "5d"
         elif interval in ['15m', '30m', '60m', '90m', '1h']:
@@ -46,13 +44,11 @@ def predict():
         if df.empty:
             return jsonify({"status": "error", "message": f"無法獲取 {symbol} 的 {interval} 歷史數據。"}), 400
 
-        # 計算均線
         df['MA5'] = df['Close'].rolling(window=5).mean()
         df['MA10'] = df['Close'].rolling(window=10).mean()
         df['MA20'] = df['Close'].rolling(window=20).mean()
         df['MA60'] = df['Close'].rolling(window=60).mean()
 
-        # MACD & KD
         df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
         df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
         df['DIF'] = df['EMA12'] - df['EMA26']
@@ -75,7 +71,6 @@ def predict():
             prev_k, prev_d = curr_k, curr_d
         df['K'], df['D'] = K, D
         
-        # OBV
         df['Volume_Dir'] = np.sign(df['Close'].diff()).fillna(0)
         df['OBV'] = (df['Volume'] * df['Volume_Dir']).cumsum()
 
@@ -96,7 +91,6 @@ def predict():
         current_price = round(float(df['Close'].iloc[-1]), 2)
         display_name = symbol
 
-        # 基本面數據 (加上防護)
         fundamental_data = {"eps": "--", "pe_ratio": "--"}
         try:
             info = stock.info
@@ -106,9 +100,8 @@ def predict():
             if eps is not None: fundamental_data["eps"] = round(eps, 2)
             if pe is not None: fundamental_data["pe_ratio"] = round(pe, 2)
         except Exception as e:
-            print("基本面解析略過:", e)
+            pass
 
-        # 籌碼面數據 (加上空值防護)
         pure_symbol = symbol.replace('.TW', '').replace('.TWO', '')
         chip_info, chip_chart_data, chip_table_data = "非日線層級", [], []
         
@@ -124,8 +117,6 @@ def predict():
                         '自營商(自行買賣)': '自營', '自營商(避險)': '自營', '自營商': '自營'
                     })
                     pivot_df = df_chips.groupby(['date', 'name'])['net_buy'].sum().unstack(fill_value=0).reset_index()
-                    
-                    # 確保三個欄位都存在
                     for col in ['外資', '投信', '自營']:
                         if col not in pivot_df.columns: pivot_df[col] = 0
                     pivot_df['合計'] = pivot_df['外資'] + pivot_df['投信'] + pivot_df['自營']
@@ -149,7 +140,6 @@ def predict():
             except Exception as e:
                 print("籌碼解析異常:", e)
 
-        # AI 提示詞 (強制要求豐富的建議內容)
         prompt = (
             f"你是台股頂級量化操盤手。分析 {display_name} ({interval})。\n"
             f"必須只輸出純 JSON，不可有 Markdown。\n"
@@ -171,9 +161,9 @@ def predict():
             f"【基本面】：{fundamental_data}\n【技術面】：{df.tail(15).to_string()}\n【籌碼面】：{chip_info}"
         )
         
-        # 雙引擎備援 + 暴力正則提取
+        # 【關鍵修復】：將 Flash 模型移到首位，大幅縮短運算時間，避免 Render 超時斷線
         ai_data = None
-        models_to_try = ['gemini-1.5-pro-latest', 'gemini-1.5-flash']
+        models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro-latest']
         
         for model_name in models_to_try:
             try:
@@ -181,7 +171,6 @@ def predict():
                 response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.1))
                 text = response.text
                 
-                # 暴力清除 Markdown
                 text = re.sub(r'```json\n?', '', text)
                 text = re.sub(r'```\n?', '', text)
                 text = text.strip()
