@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 股票戰情室 - 旗艦穩健版</title>
+    <title>AI 股票戰情室 - 嚴選濾網版</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         :root { --bg-dark: #050810; --panel-bg: #111520; --border-color: #232b3e; --text-main: #d1d4dc; --text-muted: #787b86; --blue: #2962ff; --red: #ef5350; --green: #26a69a; --orange: #ff9800; --ma5: #fdd835; --ma20: #ff4081; --ma60: #00bcd4; }
@@ -48,7 +48,7 @@
         .path-title { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
         .path-desc { font-size: 14px; color: white; }
 
-        .quant-panel { display: flex; justify-content: space-around; background: var(--panel-bg); padding: 15px; border-radius: 8px; border: 1px dashed var(--blue); margin-bottom: 15px; }
+        .quant-panel { display: flex; justify-content: space-around; background: var(--panel-bg); padding: 15px; border-radius: 8px; border: 1px dashed var(--red); margin-bottom: 15px; }
         .quant-item { text-align: center; }
         .quant-item .label { font-size: 12px; color: var(--text-muted); margin-bottom: 5px; }
         .quant-item .val { font-size: 22px; font-weight: bold; font-family: monospace; color: white; }
@@ -58,8 +58,6 @@
         input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; background: var(--border-color); border-radius: 2px; }
 
         #sysMessage { margin-bottom: 15px; font-size: 14px; }
-        
-        /* 讓建議清單可以自適應高度，不會被切掉 */
         .advice-list li { margin-bottom: 8px; }
     </style>
 </head>
@@ -72,7 +70,8 @@
                 <option value="60m">60分K</option>
                 <option value="15m">15分K</option>
                 <option value="5m">5分K</option>
-                <option value="1m">1分K (超短線)</option> </select>
+                <option value="1m">1分K (超短線)</option>
+            </select>
             <button id="analyzeBtn" onclick="analyze()">啟動全盤掃描</button>
         </div>
         <div class="price-zone" id="priceZone">
@@ -154,8 +153,9 @@
             </div>
 
             <div class="quant-panel">
-                <div class="quant-item"><div class="label">策略歷史勝率</div><div class="val" id="bt-winrate">0%</div></div>
-                <div class="quant-item"><div class="label">累計報酬率</div><div class="val" id="bt-return">0%</div></div>
+                <div class="quant-item" style="grid-column: span 2;"><div class="label" style="color:var(--red);">⚡ 嚴選雙重濾網已啟動</div></div>
+                <div class="quant-item"><div class="label">嚴選勝率</div><div class="val" id="bt-winrate">0%</div></div>
+                <div class="quant-item"><div class="label">累計報酬</div><div class="val" id="bt-return">0%</div></div>
             </div>
 
             <div class="info-card">
@@ -256,7 +256,8 @@
                     const adviceUl = document.getElementById('ai-advice');
                     adviceUl.innerHTML = Array.isArray(ai.advice) ? ai.advice.map(t => `<li>${t}</li>`).join('') : `<li>${ai.advice}</li>`;
 
-                    runBacktest(data.chart_data, data.kd_data);
+                    // 將 macd_data 與 chart_data 同步送入回測引擎進行雙重濾網驗證
+                    runBacktest(data.chart_data, data.kd_data, data.macd_data);
                     renderCharts(data);
                 } else { sysMsg.innerHTML = `<span style="color:var(--red);">❌ 分析出錯：${data.message}</span>`; }
             } catch(e) { sysMsg.innerHTML = `<span style="color:var(--red);">❌ 連線失敗：${e.message}</span>`; }
@@ -280,14 +281,28 @@
             }
         }
 
-        function runBacktest(klineData, kdData) {
+        // 【升級】：雙重濾網回測引擎
+        function runBacktest(klineData, kdData, macdData) {
             let holding = false, buyPrice = 0, totalReturn = 0, wins = 0, losses = 0;
             let priceMap = {}; klineData.forEach(d => { priceMap[d.time] = d.close; });
+            let ma20Map = {}; klineData.forEach(d => { ma20Map[d.time] = d.ma20; });
+            let macdMap = {}; macdData.forEach(d => { macdMap[d.time] = d.osc; });
+
             for (let i = 1; i < kdData.length; i++) {
                 const p = kdData[i - 1], c = kdData[i];
                 const cp = priceMap[c.time];
+                const ma20 = ma20Map[c.time] || 0;
+                const osc = macdMap[c.time] || 0;
                 if(!cp) continue;
-                if (!holding && p.k <= p.d && c.k > c.d) { holding = true; buyPrice = cp; }
+
+                // 濾網 1：KD 金叉
+                let isGoldenCross = (p.k <= p.d && c.k > c.d);
+                // 濾網 2：收盤價站上 MA20 且 MACD 柱狀圖大於 0
+                let isTrendUp = (cp > ma20) && (osc > 0);
+
+                if (!holding && isGoldenCross && isTrendUp) { 
+                    holding = true; buyPrice = cp; 
+                }
                 else if (holding && p.k >= p.d && c.k < c.d) {
                     holding = false; let ret = ((cp - buyPrice) / buyPrice) * 100; totalReturn += ret;
                     if (ret > 0) wins++; else losses++;
@@ -299,7 +314,7 @@
             }
             let total = wins + losses;
             let wr = total > 0 ? ((wins / total) * 100).toFixed(1) : 0;
-            document.getElementById('bt-winrate').innerText = `${wr}%`; document.getElementById('bt-winrate').style.color = wr > 50 ? 'var(--red)' : (wr == 0 ? '#fff' : 'var(--green)');
+            document.getElementById('bt-winrate').innerText = `${wr}% (${total}次)`; document.getElementById('bt-winrate').style.color = wr > 50 ? 'var(--red)' : (wr == 0 ? '#fff' : 'var(--green)');
             document.getElementById('bt-return').innerText = `${totalReturn > 0 ? '+' : ''}${totalReturn.toFixed(2)}%`; document.getElementById('bt-return').style.color = totalReturn >= 0 ? 'var(--red)' : 'var(--green)';
         }
 
@@ -342,12 +357,28 @@
                 } else { legend.style.display = 'none'; }
             });
 
+            // 【升級】：嚴選濾網標記邏輯
             if (data.kd_data && data.kd_data.length > 1) {
                 let markers = [];
+                let macdMap = {}; data.macd_data.forEach(d => { macdMap[d.time] = d.osc; });
+                let ma20Map = {}; data.chart_data.forEach(d => { ma20Map[d.time] = d.ma20; });
+                let priceMap = {}; data.chart_data.forEach(d => { priceMap[d.time] = d.close; });
+
                 for (let i = 1; i < data.kd_data.length; i++) {
                     const p = data.kd_data[i - 1], c = data.kd_data[i];
-                    if (p.k <= p.d && c.k > c.d) markers.push({ time: c.time, position: 'belowBar', color: '#ef5350', shape: 'arrowUp', text: '買' });
-                    else if (p.k >= p.d && c.k < c.d) markers.push({ time: c.time, position: 'aboveBar', color: '#26a69a', shape: 'arrowDown', text: '賣' });
+                    let cp = priceMap[c.time];
+                    let ma20 = ma20Map[c.time] || 0;
+                    let osc = macdMap[c.time] || 0;
+
+                    let isGoldenCross = (p.k <= p.d && c.k > c.d);
+                    let isTrendUp = (cp > ma20) && (osc > 0);
+
+                    if (isGoldenCross && isTrendUp) {
+                        markers.push({ time: c.time, position: 'belowBar', color: '#ef5350', shape: 'arrowUp', text: '嚴選買' });
+                    }
+                    else if (p.k >= p.d && c.k < c.d) {
+                        markers.push({ time: c.time, position: 'aboveBar', color: '#26a69a', shape: 'arrowDown', text: '賣' });
+                    }
                 }
                 seriesDict.candle.setMarkers(markers);
             }
