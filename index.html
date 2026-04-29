@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 股票戰情室 - 總帳旗艦版</title>
+    <title>AI 股票戰情室 - 籌碼透視版</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
-        :root { --bg-dark: #050810; --panel-bg: #111520; --border-color: #232b3e; --text-main: #d1d4dc; --text-muted: #787b86; --blue: #2962ff; --red: #ef5350; --green: #26a69a; --orange: #ff9800; --ma5: #fdd835; --ma20: #ff4081; --ma60: #00bcd4; }
+        :root { --bg-dark: #050810; --panel-bg: #111520; --border-color: #232b3e; --text-main: #d1d4dc; --text-muted: #787b86; --blue: #2962ff; --red: #ef5350; --green: #26a69a; --orange: #ff9800; --ma5: #fdd835; --ma20: #ff4081; --ma60: #00bcd4; --foreign: #fdd835; --trust: #ff4081;}
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg-dark); color: var(--text-main); margin: 0; padding: 15px; }
         .top-bar { display: flex; justify-content: space-between; align-items: center; background: var(--panel-bg); padding: 15px 20px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 15px; }
         .search-group { display: flex; gap: 10px; align-items: center; }
@@ -23,8 +23,10 @@
         .chart-box { position: relative; width: 100%; }
         .chart-title { position: absolute; z-index: 2; padding: 3px 6px; font-size: 11px; background: rgba(0,0,0,0.6); color: #fff; top: 5px; left: 5px; display: flex; gap: 10px; align-items: center; border-radius: 4px; }
         .legend-ma5 { color: var(--ma5); } .legend-ma20 { color: var(--ma20); } .legend-ma60 { color: var(--ma60); }
+        .legend-for { color: var(--foreign); } .legend-tru { color: var(--trust); }
         .chart-legend { position: absolute; z-index: 10; font-size: 12px; color: #fff; background: rgba(0,0,0,0.8); border-radius: 4px; top: 30px; left: 5px; padding: 5px; display: none; border: 1px solid var(--border-color); }
         #mainChart { height: 400px; } .sub-chart { height: 120px; }
+        #chipChart { height: 140px; } /* 稍微加大籌碼圖空間 */
         .info-card { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; }
         .card-header { font-size: 13px; font-weight: bold; color: var(--blue); border-bottom: 1px solid var(--border-color); padding-bottom: 8px; margin-bottom: 12px; }
         .f-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -57,7 +59,6 @@
         .radar-item:hover { border-color: var(--blue); }
         .radar-empty { text-align: center; color: var(--text-muted); padding: 20px; }
 
-        /* 模擬倉總績效看板 */
         .pf-dashboard { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 15px; }
         .pf-box { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; text-align: center; }
         .pf-box .lbl { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
@@ -111,7 +112,14 @@
                 <div class="chart-box"><div class="chart-title">MACD (12,26,9)</div><div id="macdChart" class="sub-chart"></div></div>
                 <div class="chart-box"><div class="chart-title">KD (9,3,3)</div><div id="kdChart" class="sub-chart"></div></div>
                 <div class="chart-box"><div class="chart-title">OBV (能量潮)</div><div id="obvChart" class="sub-chart"></div></div>
-                <div class="chart-box" id="chipBox"><div class="chart-title">三大法人買賣超</div><div id="chipChart" class="sub-chart"></div></div>
+                <div class="chart-box" id="chipBox">
+                    <div class="chart-title">
+                        <span>三大法人買賣超 (張)</span>
+                        <span class="legend-for" id="l-for">外資: --</span>
+                        <span class="legend-tru" id="l-tru">投信: --</span>
+                    </div>
+                    <div id="chipChart" class="sub-chart"></div>
+                </div>
             </div>
         </div>
         
@@ -225,7 +233,7 @@
         async function startRadar() {
             document.getElementById('radarModal').style.display = 'flex';
             const listEl = document.getElementById('radarList');
-            listEl.innerHTML = '<div class="radar-empty"><span style="color:var(--blue);">🔄 渦輪增壓掃描中，請稍候約 3 秒...</span></div>';
+            listEl.innerHTML = '<div class="radar-empty"><span style="color:var(--blue);">🔄 渦輪掃描中，請稍候...</span></div>';
             
             try {
                 const res = await fetch('https://my-ai-stock-tool.onrender.com/radar');
@@ -238,16 +246,13 @@
                         </li>
                     `).join('');
                 } else {
-                    listEl.innerHTML = '<div class="radar-empty">觀測池中今日無標的符合條件 (可能處於盤整或跌勢)。</div>';
+                    listEl.innerHTML = '<div class="radar-empty">今日無標的符合嚴選條件。</div>';
                 }
             } catch (e) { listEl.innerHTML = '<div class="radar-empty" style="color:var(--red);">連線異常。</div>'; }
         }
 
         function loadFromRadar(symbol) {
-            closeRadar();
-            document.getElementById('symbol').value = symbol;
-            document.getElementById('intervalSelector').value = '1d';
-            analyze();
+            closeRadar(); document.getElementById('symbol').value = symbol; document.getElementById('intervalSelector').value = '1d'; analyze();
         }
 
         async function analyze() {
@@ -322,43 +327,30 @@
             finally { btn.disabled = false; btn.innerText = "啟動個股分析"; }
         }
 
-        // ============================
-        // 計算機功能
-        // ============================
         function updateCalc() {
-            let eps = parseFloat(document.getElementById('slider-eps').value);
-            let pe = parseFloat(document.getElementById('slider-pe').value);
-            document.getElementById('calc-eps-val').innerText = eps.toFixed(2);
-            document.getElementById('calc-pe-val').innerText = pe.toFixed(1);
-            let targetPrice = eps * pe;
-            document.getElementById('calc-result').innerText = targetPrice.toFixed(2);
-
+            let eps = parseFloat(document.getElementById('slider-eps').value); let pe = parseFloat(document.getElementById('slider-pe').value);
+            document.getElementById('calc-eps-val').innerText = eps.toFixed(2); document.getElementById('calc-pe-val').innerText = pe.toFixed(1);
+            let tp = eps * pe; document.getElementById('calc-result').innerText = tp.toFixed(2);
             if(currentAnalysis.price > 0) {
-                let diff = ((targetPrice - currentAnalysis.price) / currentAnalysis.price) * 100;
-                let statusEl = document.getElementById('calc-status');
-                if(diff > 10) { statusEl.innerText = `📈 潛在空間: +${diff.toFixed(1)}%`; statusEl.style.color = "var(--red)"; } 
-                else if(diff < -10) { statusEl.innerText = `📉 溢價風險: ${diff.toFixed(1)}%`; statusEl.style.color = "var(--green)"; } 
-                else { statusEl.innerText = `⚖️ 目前處於合理估值`; statusEl.style.color = "var(--orange)"; }
+                let diff = ((tp - currentAnalysis.price) / currentAnalysis.price) * 100;
+                let sEl = document.getElementById('calc-status');
+                if(diff > 10) { sEl.innerText = `📈 潛在空間: +${diff.toFixed(1)}%`; sEl.style.color = "var(--red)"; } 
+                else if(diff < -10) { sEl.innerText = `📉 溢價風險: ${diff.toFixed(1)}%`; sEl.style.color = "var(--green)"; } 
+                else { sEl.innerText = `⚖️ 目前處於合理估值`; sEl.style.color = "var(--orange)"; }
             }
         }
 
         function updateRiskCalc() {
-            let cp = currentAnalysis.price;
-            let sl = parseFloat(document.getElementById('risk-stop-loss').value);
-            let maxLoss = parseFloat(document.getElementById('risk-max-loss').value);
+            let cp = currentAnalysis.price; let sl = parseFloat(document.getElementById('risk-stop-loss').value); let maxLoss = parseFloat(document.getElementById('risk-max-loss').value);
             document.getElementById('risk-current-price').innerText = cp > 0 ? cp.toFixed(2) : '0.00';
-
             if (cp > 0 && sl > 0 && cp > sl && maxLoss > 0) {
-                let riskPerLot = (cp - sl) * 1000;
-                let maxLots = maxLoss / riskPerLot;
+                let riskPerLot = (cp - sl) * 1000; let maxLots = maxLoss / riskPerLot;
                 document.getElementById('risk-result').innerText = maxLots.toFixed(2) + ' 張';
                 document.getElementById('risk-status').innerText = `買進每張潛在虧損: ${riskPerLot.toFixed(0)} 元`;
-                document.getElementById('risk-result').style.color = "var(--green)";
-                document.getElementById('risk-status').style.color = "var(--text-muted)";
+                document.getElementById('risk-result').style.color = "var(--green)"; document.getElementById('risk-status').style.color = "var(--text-muted)";
             } else {
-                document.getElementById('risk-result').innerText = '0 張';
-                document.getElementById('risk-status').innerText = sl >= cp ? '停損價不可高於現價！' : '請輸入數字試算';
-                document.getElementById('risk-result').style.color = "var(--text-muted)";
+                document.getElementById('risk-result').innerText = '0 張'; document.getElementById('risk-status').innerText = sl >= cp ? '停損價不可高於現價！' : '請輸入數字試算';
+                document.getElementById('risk-result').style.color = "var(--text-muted)"; document.getElementById('risk-status').style.color = "var(--red)";
             }
         }
 
@@ -396,13 +388,18 @@
             seriesDict.ma60 = charts.main.addLineSeries({ color: '#00bcd4', lineWidth: 1, crosshairMarkerVisible: false }); seriesDict.ma60.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma60 })));
 
             const legend = document.getElementById('chartLegend');
+            const lma5 = document.getElementById('l-ma5'); const lma20 = document.getElementById('l-ma20'); const lma60 = document.getElementById('l-ma60');
+
             charts.main.subscribeCrosshairMove(param => {
                 if (param.time && param.seriesData.get(seriesDict.candle)) {
                     const p = param.seriesData.get(seriesDict.candle);
-                    let tStr = param.time;
-                    if (typeof param.time === 'number') { tStr = new Date(param.time * 1000).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+                    let tStr = param.time; if (typeof param.time === 'number') { tStr = new Date(param.time * 1000).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); }
                     legend.style.display = 'block';
                     legend.innerHTML = `${tStr}<br>開 <span style="color:#fff">${p.open.toFixed(2)}</span><br>高 <span style="color:var(--red)">${p.high.toFixed(2)}</span><br>低 <span style="color:var(--green)">${p.low.toFixed(2)}</span><br>收 <span style="color:#ff9800">${p.close.toFixed(2)}</span>`;
+                    
+                    const m5 = param.seriesData.get(seriesDict.ma5); lma5.innerText = `MA5: ${m5 ? m5.value.toFixed(2) : '--'}`;
+                    const m20 = param.seriesData.get(seriesDict.ma20); lma20.innerText = `MA20: ${m20 ? m20.value.toFixed(2) : '--'}`;
+                    const m60 = param.seriesData.get(seriesDict.ma60); lma60.innerText = `MA60: ${m60 ? m60.value.toFixed(2) : '--'}`;
                 } else { legend.style.display = 'none'; }
             });
 
@@ -433,9 +430,35 @@
             charts.obv.addLineSeries({ color: '#2196f3', lineWidth: 2, priceFormat: { type: 'volume' } }).setData(data.obv_data);
 
             const allCharts = [charts.main, charts.macd, charts.kd, charts.obv];
+            
+            // === 【核心修改：繪製外資與投信獨立曲線】 ===
             if (iv === '1d') {
-                charts.chip = LightweightCharts.createChart(document.getElementById('chipChart'), { ...opt, height: 120, timeScale: { visible: true } });
-                if (data.chip_data && data.chip_data.length > 0) charts.chip.addHistogramSeries({ priceFormat: { type: 'volume' } }).setData(data.chip_data.map(d => ({ time: d.time, value: d.value, color: d.value > 0 ? '#ef5350' : '#26a69a' })));
+                charts.chip = LightweightCharts.createChart(document.getElementById('chipChart'), { ...opt, height: 140, timeScale: { visible: true } });
+                
+                // 1. 合計籌碼 (半透明柱狀圖，當作背景)
+                const chipTotal = charts.chip.addHistogramSeries({ priceFormat: { type: 'volume' } });
+                if (data.chip_data && data.chip_data.length > 0) {
+                    chipTotal.setData(data.chip_data.map(d => ({ time: d.time, value: d.value, color: d.value > 0 ? 'rgba(239,83,80,0.3)' : 'rgba(38,166,154,0.3)' })));
+                }
+
+                // 2. 外資 (黃線)
+                seriesDict.foreignLine = charts.chip.addLineSeries({ color: '#fdd835', lineWidth: 2 });
+                if (data.foreign_data && data.foreign_data.length > 0) seriesDict.foreignLine.setData(data.foreign_data);
+
+                // 3. 投信 (粉紅線)
+                seriesDict.trustLine = charts.chip.addLineSeries({ color: '#ff4081', lineWidth: 2 });
+                if (data.trust_data && data.trust_data.length > 0) seriesDict.trustLine.setData(data.trust_data);
+                
+                // 同步圖例
+                const lFor = document.getElementById('l-for');
+                const lTru = document.getElementById('l-tru');
+                charts.chip.subscribeCrosshairMove(param => {
+                    if (param.time) {
+                        const fVal = param.seriesData.get(seriesDict.foreignLine); lFor.innerText = `外資: ${fVal ? fVal.value.toFixed(1) : '--'}`;
+                        const tVal = param.seriesData.get(seriesDict.trustLine); lTru.innerText = `投信: ${tVal ? tVal.value.toFixed(1) : '--'}`;
+                    }
+                });
+
                 allCharts.push(charts.chip);
             }
 
@@ -445,7 +468,7 @@
         }
 
         // ============================
-        // 模擬倉總績效系統
+        // 模擬倉與其他邏輯保留不變
         // ============================
         function buyStock() { 
             if(!currentAnalysis.symbol) return; 
@@ -453,7 +476,6 @@
             if(lotsStr === null) return;
             let lots = parseFloat(lotsStr);
             if(isNaN(lots) || lots <= 0) { alert("請輸入有效的張數！"); return; }
-
             portfolio.push({ symbol: currentAnalysis.symbol, buyPrice: currentAnalysis.price, currentPrice: currentAnalysis.price, lots: lots }); 
             saveAndRender(); 
         }
@@ -462,65 +484,34 @@
         
         function renderPortfolio() {
             const tbody = document.getElementById('portfolioBody'); tbody.innerHTML = '';
-            
             let totalCost = 0, totalValue = 0;
-
             if(portfolio.length === 0) { 
                 tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">目前無持股</td></tr>'; 
             } else {
                 portfolio.forEach((item, index) => {
-                    let cost = item.buyPrice * item.lots * 1000;
-                    let val = item.currentPrice * item.lots * 1000;
-                    totalCost += cost;
-                    totalValue += val;
-
-                    let pnlAmt = val - cost;
-                    let pnlPct = (pnlAmt / cost) * 100;
-                    
+                    let cost = item.buyPrice * item.lots * 1000; let val = item.currentPrice * item.lots * 1000;
+                    totalCost += cost; totalValue += val;
+                    let pnlAmt = val - cost; let pnlPct = (pnlAmt / cost) * 100;
                     const cClass = pnlAmt >= 0 ? 'txt-red' : 'txt-green';
                     const pnlText = pnlAmt >= 0 ? `+${pnlAmt.toLocaleString(undefined, {maximumFractionDigits:0})}` : pnlAmt.toLocaleString(undefined, {maximumFractionDigits:0});
                     const pctText = pnlPct >= 0 ? `+${pnlPct.toFixed(2)}%` : `${pnlPct.toFixed(2)}%`;
-
-                    tbody.innerHTML += `<tr>
-                        <td style="color:white; font-weight:bold;">${item.symbol.replace('.TW','').replace('.TWO','')}</td>
-                        <td>${item.lots}</td>
-                        <td>${item.buyPrice.toFixed(2)}</td>
-                        <td>${parseFloat(item.currentPrice).toFixed(2)}</td>
-                        <td class="${cClass}" style="font-weight:bold;">${pnlText}</td>
-                        <td class="${cClass}" style="font-weight:bold;">${pctText}</td>
-                        <td><button style="background:var(--green); color:white; border:none; padding:4px 10px; border-radius:4px; cursor:pointer;" onclick="sellStock(${index})">平倉</button></td>
-                    </tr>`;
+                    tbody.innerHTML += `<tr><td style="color:white; font-weight:bold;">${item.symbol.replace('.TW','').replace('.TWO','')}</td><td>${item.lots}</td><td>${item.buyPrice.toFixed(2)}</td><td>${parseFloat(item.currentPrice).toFixed(2)}</td><td class="${cClass}" style="font-weight:bold;">${pnlText}</td><td class="${cClass}" style="font-weight:bold;">${pctText}</td><td><button style="background:var(--green); color:white; border:none; padding:4px 10px; border-radius:4px; cursor:pointer;" onclick="sellStock(${index})">平倉</button></td></tr>`;
                 });
             }
-
-            // 更新儀表板
             document.getElementById('pf-cost').innerText = totalCost.toLocaleString(undefined, {maximumFractionDigits:0});
             document.getElementById('pf-value').innerText = totalValue.toLocaleString(undefined, {maximumFractionDigits:0});
-            
-            let totPnl = totalValue - totalCost;
-            let totPct = totalCost > 0 ? (totPnl / totalCost) * 100 : 0;
-            
-            let amtEl = document.getElementById('pf-pnl-amt');
-            let pctEl = document.getElementById('pf-pnl-pct');
-            
+            let totPnl = totalValue - totalCost; let totPct = totalCost > 0 ? (totPnl / totalCost) * 100 : 0;
+            let amtEl = document.getElementById('pf-pnl-amt'); let pctEl = document.getElementById('pf-pnl-pct');
             amtEl.innerText = totPnl >= 0 ? `+${totPnl.toLocaleString(undefined, {maximumFractionDigits:0})}` : totPnl.toLocaleString(undefined, {maximumFractionDigits:0});
             pctEl.innerText = totPct >= 0 ? `+${totPct.toFixed(2)}%` : `${totPct.toFixed(2)}%`;
-            
             let finalColor = totPnl > 0 ? "var(--red)" : (totPnl < 0 ? "var(--green)" : "white");
-            amtEl.style.color = finalColor;
-            pctEl.style.color = finalColor;
+            amtEl.style.color = finalColor; pctEl.style.color = finalColor;
         }
 
         async function updatePortfolioPrices() {
             if(portfolio.length === 0) return;
             for (let i = 0; i < portfolio.length; i++) {
-                try { 
-                    const res = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${portfolio[i].symbol}`); 
-                    if(res.ok) { 
-                        const data = await res.json(); 
-                        if(data.status === "success") portfolio[i].currentPrice = data.current_price; 
-                    } 
-                } catch(e) {}
+                try { const res = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${portfolio[i].symbol}`); if(res.ok) { const data = await res.json(); if(data.status === "success") portfolio[i].currentPrice = data.current_price; } } catch(e) {}
             }
             saveAndRender();
         }
