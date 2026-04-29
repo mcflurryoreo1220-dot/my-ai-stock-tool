@@ -18,10 +18,89 @@ api_key = os.environ.get("GOOGLE_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
 
+# 自選觀測池 (放入您常看或市場熱門的標的，控制在 15-20 檔以內避免免費機房超時)
+RADAR_WATCHLIST = [
+    '2330.TW', '2317.TW', '2454.TW', '2382.TW', '3231.TW', 
+    '2603.TW', '1519.TW', '3661.TW', '6285.TW', '6147.TWO', 
+    '6269.TW', '2441.TW', '2362.TW', '3481.TW', '2308.TW'
+]
+
 @app.route('/')
 def home():
-    return "AI 戰情室大腦運轉中！(搭載自動上櫃股切換與雙引擎)"
+    return "AI 戰情室大腦運轉中！(搭載 AI 提速優化與主動選股雷達)"
 
+# ==========================================
+# 全新：主動選股雷達航線
+# ==========================================
+@app.route('/radar', methods=['GET'])
+def radar():
+    matched_stocks = []
+    try:
+        for symbol in RADAR_WATCHLIST:
+            try:
+                stock = yf.Ticker(symbol)
+                df = stock.history(period="1mo", interval="1d")
+                
+                # 自動上櫃切換
+                if df.empty and symbol.endswith('.TW'):
+                    fallback_symbol = symbol.replace('.TW', '.TWO')
+                    stock = yf.Ticker(fallback_symbol)
+                    df = stock.history(period="1mo", interval="1d")
+                    symbol = fallback_symbol
+
+                if df.empty or len(df) < 26:
+                    continue
+
+                # 計算雷達所需的濾網指標
+                df['MA20'] = df['Close'].rolling(window=20).mean()
+                df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
+                df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
+                df['DIF'] = df['EMA12'] - df['EMA26']
+                df['MACD_Signal'] = df['DIF'].ewm(span=9, adjust=False).mean()
+                df['OSC'] = df['DIF'] - df['MACD_Signal']
+                df['9_high'] = df['High'].rolling(9).max()
+                df['9_low'] = df['Low'].rolling(9).min()
+                df['RSV'] = (df['Close'] - df['9_low']) / (df['9_high'] - df['9_low']) * 100
+                df['RSV'] = df['RSV'].replace([np.inf, -np.inf], np.nan)
+                
+                rsv_list = df['RSV'].fillna(50).tolist()
+                K, D = [], []
+                prev_k, prev_d = 50, 50
+                for rsv in rsv_list:
+                    curr_k = (2/3) * prev_k + (1/3) * rsv
+                    curr_d = (2/3) * prev_d + (1/3) * curr_k
+                    K.append(curr_k)
+                    D.append(curr_d)
+                    prev_k, prev_d = curr_k, curr_d
+                df['K'], df['D'] = K, D
+
+                # 提取最後兩天的數據進行「嚴選濾網」驗證
+                last_2 = df.tail(2)
+                prev = last_2.iloc[0]
+                curr = last_2.iloc[1]
+
+                # 濾網條件：1. KD 金叉  2. 站上月線  3. MACD 紅柱
+                kd_cross = (prev['K'] <= prev['D']) and (curr['K'] > curr['D'])
+                trend_up = (curr['Close'] > curr['MA20']) and (curr['OSC'] > 0)
+
+                if kd_cross and trend_up:
+                    name = stock.info.get('shortName', symbol.replace('.TW','').replace('.TWO',''))
+                    matched_stocks.append({
+                        "symbol": symbol.replace('.TW','').replace('.TWO',''),
+                        "name": name,
+                        "price": round(curr['Close'], 2)
+                    })
+            except Exception as e:
+                print(f"雷達掃描 {symbol} 時發生錯誤: {e}")
+                continue
+
+        return jsonify({"status": "success", "matches": matched_stocks})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# ==========================================
+# 原有分析航線 (含 AI 提速優化)
+# ==========================================
 @app.route('/predict', methods=['GET'])
 def predict():
     symbol = request.args.get('symbol', '2330.TW')
@@ -32,29 +111,21 @@ def predict():
         interval = '1d'
 
     try:
-        if interval in ['1m', '2m', '5m']:
-            period = "5d"
-        elif interval in ['15m', '30m', '60m', '90m', '1h']:
-            period = "1mo"
-        else:
-            period = "6mo"
+        if interval in ['1m', '2m', '5m']: period = "5d"
+        elif interval in ['15m', '30m', '60m', '90m', '1h']: period = "1mo"
+        else: period = "6mo"
 
-        # 1. 抓取技術面數據
         stock = yf.Ticker(symbol)
         df = stock.history(period=period, interval=interval)
         
-        # 【核心修復】：自動備援上櫃代碼 (.TWO) 搜尋
         if df.empty and symbol.endswith('.TW'):
             fallback_symbol = symbol.replace('.TW', '.TWO')
-            fallback_stock = yf.Ticker(fallback_symbol)
-            fallback_df = fallback_stock.history(period=period, interval=interval)
-            if not fallback_df.empty:
-                symbol = fallback_symbol
-                stock = fallback_stock
-                df = fallback_df
+            stock = yf.Ticker(fallback_symbol)
+            df = stock.history(period=period, interval=interval)
+            symbol = fallback_symbol
 
         if df.empty:
-            return jsonify({"status": "error", "message": f"無法獲取 {symbol} 的數據。確認代碼或等待開盤資料更新。"}), 400
+            return jsonify({"status": "error", "message": f"無法獲取 {symbol} 的數據。"}), 400
 
         df['MA5'] = df['Close'].rolling(window=5).mean()
         df['MA10'] = df['Close'].rolling(window=10).mean()
@@ -92,10 +163,7 @@ def predict():
         chart_data, macd_data, kd_data, obv_data = [], [], [], []
         for date, row in df_chart.iterrows():
             time_val = date.strftime('%Y-%m-%d') if interval == '1d' else int(date.timestamp())
-            chart_data.append({
-                "time": time_val, "open": round(row['Open'],2), "high": round(row['High'],2), "low": round(row['Low'],2), "close": round(row['Close'],2),
-                "ma5": row['MA5'], "ma10": row['MA10'], "ma20": row['MA20'], "ma60": row['MA60']
-            })
+            chart_data.append({"time": time_val, "open": round(row['Open'],2), "high": round(row['High'],2), "low": round(row['Low'],2), "close": round(row['Close'],2), "ma5": row['MA5'], "ma10": row['MA10'], "ma20": row['MA20'], "ma60": row['MA60']})
             macd_data.append({"time": time_val, "dif": row['DIF'], "signal": row['MACD_Signal'], "osc": row['OSC']})
             kd_data.append({"time": time_val, "k": row['K'], "d": row['D']})
             obv_data.append({"time": time_val, "value": row['OBV']})
@@ -111,11 +179,10 @@ def predict():
             pe = info.get("trailingPE")
             if eps is not None: fundamental_data["eps"] = round(eps, 2)
             if pe is not None: fundamental_data["pe_ratio"] = round(pe, 2)
-        except Exception:
-            pass
+        except: pass
 
         pure_symbol = symbol.replace('.TW', '').replace('.TWO', '')
-        chip_info, chip_chart_data, chip_table_data = "非日線層級", [], []
+        chip_info, chip_chart_data, chip_table_data = "非日線", [], []
         
         if interval == '1d':
             try:
@@ -124,10 +191,7 @@ def predict():
                 df_chips = dl.taiwan_stock_institutional_investors(stock_id=pure_symbol, start_date=start_date)
                 if isinstance(df_chips, pd.DataFrame) and not df_chips.empty:
                     df_chips['net_buy'] = df_chips['buy'] - df_chips['sell']
-                    df_chips['name'] = df_chips['name'].replace({
-                        '外資及陸資(不含外資自營商)': '外資', '外資及陸資': '外資',
-                        '自營商(自行買賣)': '自營', '自營商(避險)': '自營', '自營商': '自營'
-                    })
+                    df_chips['name'] = df_chips['name'].replace({'外資及陸資(不含外資自營商)': '外資', '外資及陸資': '外資', '自營商(自行買賣)': '自營', '自營商(避險)': '自營', '自營商': '自營'})
                     pivot_df = df_chips.groupby(['date', 'name'])['net_buy'].sum().unstack(fill_value=0).reset_index()
                     for col in ['外資', '投信', '自營']:
                         if col not in pivot_df.columns: pivot_df[col] = 0
@@ -136,69 +200,47 @@ def predict():
                     
                     for _, r in pivot_df.iterrows():
                         chip_chart_data.append({"time": str(r['date']), "value": round(float(r['合計']) / 1000, 2)})
-                    chip_info = pivot_df.tail(15).to_string() 
+                    
+                    # 【提速優化】：只給 AI 最近 5 天的籌碼，減少運算負擔
+                    chip_info = pivot_df.tail(5).to_string() 
                     
                     last_10 = pivot_df.tail(10).iloc[::-1]
                     for _, r in last_10.iterrows():
                         try:
                             chip_table_data.append({
-                                "date": str(r['date'])[5:], 
-                                "foreign": round(float(r.get('外資', 0)) / 1000, 1),
-                                "trust": round(float(r.get('投信', 0)) / 1000, 1),
-                                "dealer": round(float(r.get('自營', 0)) / 1000, 1),
+                                "date": str(r['date'])[5:], "foreign": round(float(r.get('外資', 0)) / 1000, 1),
+                                "trust": round(float(r.get('投信', 0)) / 1000, 1), "dealer": round(float(r.get('自營', 0)) / 1000, 1),
                                 "total": round(float(r.get('合計', 0)) / 1000, 1)
                             })
                         except: pass
             except Exception as e:
-                print("籌碼解析異常:", e)
+                print("籌碼異常:", e)
+
+        # 【提速優化】：只給 AI 最近 5 天的技術面
+        tech_str = df[['Close', 'Volume', 'MA20', 'OSC', 'K', 'D']].tail(5).to_string()
 
         prompt = (
-            f"你是台股頂級量化操盤手。分析 {display_name} ({interval})。\n"
-            f"必須只輸出純 JSON，不可有 Markdown。\n"
-            f"格式嚴格規定：\n"
-            f"{{\n"
-            f"  \"signal\": \"偏多/偏空/觀望\",\n"
-            f"  \"pressure\": \"價格\",\n"
-            f"  \"support\": \"價格\",\n"
-            f"  \"stop_loss\": \"價格\",\n"
-            f"  \"path_up\": \"上漲路徑推演\",\n"
-            f"  \"path_down\": \"下跌路徑推演\",\n"
-            f"  \"stars\": 1到5整數,\n"
-            f"  \"advice\": [\n"
-            f"    \"技術面：(請詳細解讀均線、MACD與KD)\",\n"
-            f"    \"籌碼面：(請解讀法人買賣超動向)\",\n"
-            f"    \"總結建議：(給出明確的進出場策略)\"\n"
-            f"  ]\n"
-            f"}}\n\n"
-            f"【基本面】：{fundamental_data}\n【技術面】：{df.tail(15).to_string()}\n【籌碼面】：{chip_info}"
+            f"你是台股量化操盤手。分析 {display_name} ({interval})。\n"
+            f"純 JSON 輸出，格式：\n"
+            f"{{\n  \"signal\": \"偏多/偏空/觀望\",\n  \"pressure\": \"價格\",\n  \"support\": \"價格\",\n  \"stop_loss\": \"價格\",\n  \"path_up\": \"上漲路徑\",\n  \"path_down\": \"下跌路徑\",\n  \"stars\": 1到5整數,\n  \"advice\": [\"技術面簡評\", \"籌碼面簡評\", \"進出場結論\"]\n}}\n\n"
+            f"基本面：{fundamental_data}\n技術面：{tech_str}\n籌碼面：{chip_info}"
         )
         
         ai_data = None
         models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro-latest']
-        
         for model_name in models_to_try:
             try:
                 model = genai.GenerativeModel(model_name)
                 response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.1))
-                text = response.text
-                
-                text = re.sub(r'```json\n?', '', text)
-                text = re.sub(r'```\n?', '', text)
-                text = text.strip()
-                
-                start = text.find('{')
-                end = text.rfind('}')
-                if start != -1 and end != -1:
-                    ai_data = json.loads(text[start:end+1])
-                    break
-                else:
-                    ai_data = json.loads(text)
-                    break
-            except Exception:
-                continue
+                text = response.text.replace("```json", "").replace("```", "").strip()
+                match = re.search(r'\{.*\}', text, re.DOTALL)
+                if match: ai_data = json.loads(match.group(0))
+                else: ai_data = json.loads(text)
+                break
+            except Exception: continue
                 
         if not ai_data:
-            ai_data = {"signal": "系統繁忙", "pressure": "--", "support": "--", "stop_loss": "--", "path_up": "--", "path_down": "--", "stars": 0, "advice": ["Google AI 伺服器超時", "但圖表與量化訊號已為您載入", "請稍後重新點擊掃描"]}
+            ai_data = {"signal": "AI休眠", "pressure": "--", "support": "--", "stop_loss": "--", "path_up": "--", "path_down": "--", "stars": 0, "advice": ["請再按一次啟動掃描"]}
 
         return jsonify({
             "status": "success", "symbol": symbol, "current_price": current_price, "interval": interval,
