@@ -3,17 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 股票戰情室 - 防禦旗艦版</title>
+    <title>AI 股票戰情室 - 雷達旗艦版</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         :root { --bg-dark: #050810; --panel-bg: #111520; --border-color: #232b3e; --text-main: #d1d4dc; --text-muted: #787b86; --blue: #2962ff; --red: #ef5350; --green: #26a69a; --orange: #ff9800; --ma5: #fdd835; --ma20: #ff4081; --ma60: #00bcd4; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg-dark); color: var(--text-main); margin: 0; padding: 15px; }
         
         .top-bar { display: flex; justify-content: space-between; align-items: center; background: var(--panel-bg); padding: 15px 20px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 15px; }
-        .search-group { display: flex; gap: 10px; width: 50%; }
+        .search-group { display: flex; gap: 10px; align-items: center; }
         input[type="text"], input[type="number"], select { padding: 10px; background: #0b0e14; border: 1px solid var(--border-color); color: white; border-radius: 4px; outline: none; font-weight: bold; }
-        button { padding: 10px 20px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; background: var(--blue); }
-        button:hover { background: #1e4bd8; }
+        button { padding: 10px 20px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; transition: 0.2s; }
+        .btn-primary { background: var(--blue); } .btn-primary:hover { background: #1e4bd8; }
+        .btn-radar { background: #673ab7; } .btn-radar:hover { background: #512da8; }
         button:disabled { background: var(--border-color); color: var(--text-muted); cursor: not-allowed; }
         
         .price-zone { display: none; align-items: baseline; gap: 15px; }
@@ -27,7 +28,6 @@
         .chart-title { position: absolute; z-index: 2; padding: 3px 6px; font-size: 11px; background: rgba(0,0,0,0.6); color: #fff; top: 5px; left: 5px; display: flex; gap: 10px; align-items: center; border-radius: 4px; }
         .legend-ma5 { color: var(--ma5); } .legend-ma20 { color: var(--ma20); } .legend-ma60 { color: var(--ma60); }
         .chart-legend { position: absolute; z-index: 10; font-size: 12px; color: #fff; background: rgba(0,0,0,0.8); border-radius: 4px; top: 30px; left: 5px; padding: 5px; display: none; border: 1px solid var(--border-color); }
-        
         #mainChart { height: 400px; } .sub-chart { height: 120px; }
         
         .info-card { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; }
@@ -59,12 +59,36 @@
 
         #sysMessage { margin-bottom: 15px; font-size: 14px; }
         .advice-list li { margin-bottom: 8px; }
+
+        /* 雷達專用 Modal 樣式 */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: none; justify-content: center; align-items: center; }
+        .modal-content { background: var(--panel-bg); border: 1px solid var(--blue); border-radius: 8px; width: 400px; padding: 20px; box-shadow: 0 0 20px rgba(41, 98, 255, 0.3); }
+        .modal-header { font-size: 18px; font-weight: bold; color: white; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
+        .radar-list { list-style: none; padding: 0; margin: 0; max-height: 300px; overflow-y: auto; }
+        .radar-item { background: #0b0e14; margin-bottom: 8px; padding: 12px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border-color); cursor: pointer; transition: 0.2s; }
+        .radar-item:hover { border-color: var(--blue); }
+        .radar-empty { text-align: center; color: var(--text-muted); padding: 20px; }
     </style>
 </head>
 <body>
+    <div class="modal-overlay" id="radarModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>📡 嚴選雷達掃描結果</span>
+                <button style="background:transparent; border:none; color:var(--text-muted); font-size:20px; padding:0;" onclick="closeRadar()">×</button>
+            </div>
+            <div style="font-size:12px; color:var(--text-muted); margin-bottom:15px;">以下標的於今日符合「KD金叉 + 站上月線 + MACD翻紅」之嚴格濾網條件：</div>
+            <ul class="radar-list" id="radarList">
+                <div class="radar-empty">掃描中，請稍候...</div>
+            </ul>
+        </div>
+    </div>
+
     <div class="top-bar">
         <div class="search-group">
-            <input type="text" id="symbol" value="6147" placeholder="輸入台股代碼">
+            <button class="btn-radar" onclick="startRadar()">📡 啟動選股雷達</button>
+            <div style="width: 1px; height: 30px; background: var(--border-color); margin: 0 10px;"></div>
+            <input type="text" id="symbol" value="2330" placeholder="輸入台股代碼">
             <select id="intervalSelector">
                 <option value="1d" selected>日K線</option>
                 <option value="60m">60分K</option>
@@ -72,7 +96,7 @@
                 <option value="5m">5分K</option>
                 <option value="1m">1分K (超短線)</option>
             </select>
-            <button id="analyzeBtn" onclick="analyze()">啟動全盤掃描</button>
+            <button class="btn-primary" id="analyzeBtn" onclick="analyze()">啟動個股分析</button>
         </div>
         <div class="price-zone" id="priceZone">
             <div id="stockTitle" style="font-weight:bold; font-size:24px;">--</div>
@@ -143,7 +167,7 @@
                     <div id="calc-status" style="font-size:14px; margin-top:8px; font-weight:bold;">--</div>
                 </div>
             </div>
-
+            
             <div class="info-card" style="border-color: var(--green);">
                 <div class="card-header" style="color: var(--green);">🛡️ 資金控管計算機 (防禦工事)</div>
                 <div style="display:flex; gap:10px; margin-bottom: 10px;">
@@ -211,6 +235,46 @@
         let seriesDict = {};
         let currentAnalysis = { symbol: '', price: 0 };
 
+        // ============================
+        // 雷達功能邏輯
+        // ============================
+        function closeRadar() { document.getElementById('radarModal').style.display = 'none'; }
+        
+        async function startRadar() {
+            document.getElementById('radarModal').style.display = 'flex';
+            const listEl = document.getElementById('radarList');
+            listEl.innerHTML = '<div class="radar-empty"><span style="color:var(--blue);">🔄 正在派無人機掃描熱門觀測池，請稍候約 20 秒...</span></div>';
+            
+            try {
+                const res = await fetch('https://my-ai-stock-tool.onrender.com/radar');
+                const data = await res.json();
+                if (data.status === "success" && data.matches.length > 0) {
+                    listEl.innerHTML = data.matches.map(s => `
+                        <li class="radar-item" onclick="loadFromRadar('${s.symbol}')">
+                            <div><span style="color:white; font-weight:bold; font-size:16px;">${s.name}</span> <span style="color:var(--text-muted); font-size:12px;">(${s.symbol})</span></div>
+                            <div style="color:var(--red); font-weight:bold;">${s.price.toFixed(2)}</div>
+                        </li>
+                    `).join('');
+                } else if (data.status === "success") {
+                    listEl.innerHTML = '<div class="radar-empty">觀測池中今日無標的符合嚴選濾網條件。</div>';
+                } else {
+                    listEl.innerHTML = '<div class="radar-empty" style="color:var(--red);">掃描失敗，請稍後重試。</div>';
+                }
+            } catch (e) {
+                listEl.innerHTML = '<div class="radar-empty" style="color:var(--red);">連線異常，無法完成雷達掃描。</div>';
+            }
+        }
+
+        function loadFromRadar(symbol) {
+            closeRadar();
+            document.getElementById('symbol').value = symbol;
+            document.getElementById('intervalSelector').value = '1d';
+            analyze();
+        }
+
+        // ============================
+        // 個股分析邏輯
+        // ============================
         async function analyze() {
             const symbolInput = document.getElementById('symbol').value.trim();
             const symbol = /^\d+$/.test(symbolInput) ? symbolInput + ".TW" : symbolInput;
@@ -222,33 +286,25 @@
             document.getElementById('mainGrid').style.display = "none";
             document.getElementById('priceZone').style.display = "none";
             btn.disabled = true; btn.innerText = "掃描中...";
-            sysMsg.innerHTML = '<span style="color:var(--blue);">🔄 正在調度大腦解析數據 (初次喚醒機房可能需時 50 秒)...</span>';
+            sysMsg.innerHTML = '<span style="color:var(--blue);">🔄 AI 大腦深度運算中 (已優化資料負載)...</span>';
             
             try {
                 const res = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${symbol}&interval=${interval}`);
-                
-                // 【核心修復】：更精準的錯誤攔截與提示
                 if (!res.ok) {
-                    let errStr = "伺服器無回應 (可能是免費機房正在開機，請等 1 分鐘後再試一次)";
-                    try { 
-                        const errJ = await res.json(); 
-                        if(errJ.message) errStr = errJ.message; 
-                    } catch(e){}
+                    let errStr = "伺服器無回應 (可能是免費機房正在開機，請等 30 秒後再試)";
+                    try { const errJ = await res.json(); if(errJ.message) errStr = errJ.message; } catch(e){}
                     throw new Error(errStr);
                 }
-
                 const data = await res.json();
                 
                 if(data.status === "success") {
                     sysMsg.innerHTML = "";
-                    currentAnalysis.symbol = data.symbol; 
-                    currentAnalysis.price = parseFloat(data.current_price);
+                    currentAnalysis.symbol = data.symbol; currentAnalysis.price = parseFloat(data.current_price);
                     
                     document.getElementById('mainGrid').style.display = "grid";
                     document.getElementById('priceZone').style.display = "flex";
                     document.getElementById('stockTitle').innerText = data.symbol.replace('.TW', '').replace('.TWO', '');
                     document.getElementById('currentPriceDisplay').innerText = currentAnalysis.price.toFixed(2);
-                    
                     document.getElementById('mainChartTitle').innerText = `${document.getElementById('intervalSelector').options[document.getElementById('intervalSelector').selectedIndex].text}`;
                     
                     const isDaily = (data.interval === '1d');
@@ -269,17 +325,14 @@
                     document.getElementById('f-eps').innerText = data.fundamental.eps || '--';
                     document.getElementById('f-pe').innerText = data.fundamental.pe_ratio || '--';
                     
-                    let epsVal = parseFloat(data.fundamental.eps);
-                    let peVal = parseFloat(data.fundamental.pe_ratio);
+                    let epsVal = parseFloat(data.fundamental.eps); let peVal = parseFloat(data.fundamental.pe_ratio);
                     document.getElementById('slider-eps').value = (!isNaN(epsVal) && epsVal > 0) ? epsVal : 0;
                     document.getElementById('slider-pe').value = (!isNaN(peVal) && peVal > 0 && peVal < 80) ? peVal : 15;
                     updateCalc();
 
                     const ai = data.ai_analysis;
                     document.getElementById('ai-signal').innerText = ai.signal || '--';
-                    if(ai.signal) {
-                        document.getElementById('ai-signal').style.color = (ai.signal.includes('多') || ai.signal.includes('強')) ? 'var(--red)' : ((ai.signal.includes('空') || ai.signal.includes('弱') || ai.signal.includes('失敗')) ? 'var(--green)' : 'var(--orange)');
-                    }
+                    if(ai.signal) document.getElementById('ai-signal').style.color = (ai.signal.includes('多') || ai.signal.includes('強')) ? 'var(--red)' : ((ai.signal.includes('空') || ai.signal.includes('弱') || ai.signal.includes('失敗')) ? 'var(--green)' : 'var(--orange)');
                     
                     document.getElementById('ai-pressure').innerText = ai.pressure || '--';
                     document.getElementById('ai-support').innerText = ai.support || '--';
@@ -291,22 +344,20 @@
                     const adviceUl = document.getElementById('ai-advice');
                     adviceUl.innerHTML = Array.isArray(ai.advice) ? ai.advice.map(t => `<li>${t}</li>`).join('') : `<li>${ai.advice}</li>`;
 
-                    let aiStopLossRaw = ai.stop_loss || '';
-                    let parsedSL = parseFloat(aiStopLossRaw.replace(/[^\d.]/g, ''));
-                    if (!isNaN(parsedSL) && parsedSL > 0) {
-                        document.getElementById('risk-stop-loss').value = parsedSL;
-                    } else {
-                        document.getElementById('risk-stop-loss').value = (currentAnalysis.price * 0.95).toFixed(2);
-                    }
+                    let parsedSL = parseFloat((ai.stop_loss || '').replace(/[^\d.]/g, ''));
+                    document.getElementById('risk-stop-loss').value = (!isNaN(parsedSL) && parsedSL > 0) ? parsedSL : (currentAnalysis.price * 0.95).toFixed(2);
                     updateRiskCalc();
 
                     runBacktest(data.chart_data, data.kd_data, data.macd_data);
                     renderCharts(data);
                 } else { sysMsg.innerHTML = `<span style="color:var(--red);">❌ 分析出錯：${data.message}</span>`; }
             } catch(e) { sysMsg.innerHTML = `<span style="color:var(--red);">❌ 連線失敗：${e.message}</span>`; }
-            finally { btn.disabled = false; btn.innerText = "啟動全盤掃描"; }
+            finally { btn.disabled = false; btn.innerText = "啟動個股分析"; }
         }
 
+        // ============================
+        // 計算機與圖表功能
+        // ============================
         function updateCalc() {
             let eps = parseFloat(document.getElementById('slider-eps').value);
             let pe = parseFloat(document.getElementById('slider-pe').value);
@@ -332,10 +383,8 @@
             document.getElementById('risk-current-price').innerText = cp > 0 ? cp.toFixed(2) : '0.00';
 
             if (cp > 0 && sl > 0 && cp > sl && maxLoss > 0) {
-                let riskPerShare = cp - sl;
-                let riskPerLot = riskPerShare * 1000;
+                let riskPerLot = (cp - sl) * 1000;
                 let maxLots = maxLoss / riskPerLot;
-
                 document.getElementById('risk-result').innerText = maxLots.toFixed(2) + ' 張';
                 document.getElementById('risk-status').innerText = `買進每張潛在虧損: ${riskPerLot.toFixed(0)} 元`;
                 document.getElementById('risk-result').style.color = "var(--green)";
@@ -368,9 +417,7 @@
                 let isGoldenCross = (p.k <= p.d && c.k > c.d);
                 let isTrendUp = (cp > ma20) && (osc > 0);
 
-                if (!holding && isGoldenCross && isTrendUp) { 
-                    holding = true; buyPrice = cp; 
-                }
+                if (!holding && isGoldenCross && isTrendUp) { holding = true; buyPrice = cp; }
                 else if (holding && p.k >= p.d && c.k < c.d) {
                     holding = false; let ret = ((cp - buyPrice) / buyPrice) * 100; totalReturn += ret;
                     if (ret > 0) wins++; else losses++;
@@ -387,92 +434,4 @@
         }
 
         function renderCharts(data) {
-            for (let key in charts) { if (charts[key]) { try { charts[key].remove(); } catch (e) {} } }
-            charts = {}; seriesDict = {};
-
-            const iv = data.interval;
-            const opt = { layout: { background: { color: '#111520' }, textColor: '#787b86' }, grid: { vertLines: { color: '#232b3e' }, horzLines: { color: '#232b3e' } }, crosshair: { mode: LightweightCharts.CrosshairMode.Normal }, timeScale: { visible: false, timeVisible: iv !== '1d' } };
-
-            charts.main = LightweightCharts.createChart(document.getElementById('mainChart'), { ...opt, height: 400 });
-            seriesDict.candle = charts.main.addCandlestickSeries({ upColor: '#ef5350', downColor: '#26a69a', borderVisible: false, wickUpColor: '#ef5350', wickDownColor: '#26a69a' });
-            seriesDict.candle.setData(data.chart_data);
-
-            seriesDict.ma5 = charts.main.addLineSeries({ color: '#fdd835', lineWidth: 1, crosshairMarkerVisible: false });
-            seriesDict.ma5.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma5 })));
-            seriesDict.ma20 = charts.main.addLineSeries({ color: '#ff4081', lineWidth: 1, crosshairMarkerVisible: false });
-            seriesDict.ma20.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma20 })));
-            seriesDict.ma60 = charts.main.addLineSeries({ color: '#00bcd4', lineWidth: 1, crosshairMarkerVisible: false });
-            seriesDict.ma60.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma60 })));
-
-            const legend = document.getElementById('chartLegend');
-            const lma5 = document.getElementById('l-ma5');
-            const lma20 = document.getElementById('l-ma20');
-            const lma60 = document.getElementById('l-ma60');
-
-            charts.main.subscribeCrosshairMove(param => {
-                if (param.time && param.seriesData.get(seriesDict.candle)) {
-                    const p = param.seriesData.get(seriesDict.candle);
-                    let tStr = param.time;
-                    if (typeof param.time === 'number') {
-                        tStr = new Date(param.time * 1000).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-                    }
-                    legend.style.display = 'block';
-                    legend.innerHTML = `${tStr}<br>開 <span style="color:#fff">${p.open.toFixed(2)}</span><br>高 <span style="color:var(--red)">${p.high.toFixed(2)}</span><br>低 <span style="color:var(--green)">${p.low.toFixed(2)}</span><br>收 <span style="color:#ff9800">${p.close.toFixed(2)}</span>`;
-                    
-                    const m5 = param.seriesData.get(seriesDict.ma5); lma5.innerText = `MA5: ${m5 ? m5.value.toFixed(2) : '--'}`;
-                    const m20 = param.seriesData.get(seriesDict.ma20); lma20.innerText = `MA20: ${m20 ? m20.value.toFixed(2) : '--'}`;
-                    const m60 = param.seriesData.get(seriesDict.ma60); lma60.innerText = `MA60: ${m60 ? m60.value.toFixed(2) : '--'}`;
-                } else { legend.style.display = 'none'; }
-            });
-
-            if (data.kd_data && data.kd_data.length > 1) {
-                let markers = [];
-                let macdMap = {}; data.macd_data.forEach(d => { macdMap[d.time] = d.osc; });
-                let ma20Map = {}; data.chart_data.forEach(d => { ma20Map[d.time] = d.ma20; });
-                let priceMap = {}; data.chart_data.forEach(d => { priceMap[d.time] = d.close; });
-
-                for (let i = 1; i < data.kd_data.length; i++) {
-                    const p = data.kd_data[i - 1], c = data.kd_data[i];
-                    let cp = priceMap[c.time];
-                    let ma20 = ma20Map[c.time] || 0;
-                    let osc = macdMap[c.time] || 0;
-
-                    let isGoldenCross = (p.k <= p.d && c.k > c.d);
-                    let isTrendUp = (cp > ma20) && (osc > 0);
-
-                    if (isGoldenCross && isTrendUp) {
-                        markers.push({ time: c.time, position: 'belowBar', color: '#ef5350', shape: 'arrowUp', text: '嚴選買' });
-                    }
-                    else if (p.k >= p.d && c.k < c.d) {
-                        markers.push({ time: c.time, position: 'aboveBar', color: '#26a69a', shape: 'arrowDown', text: '賣' });
-                    }
-                }
-                seriesDict.candle.setMarkers(markers);
-            }
-
-            charts.macd = LightweightCharts.createChart(document.getElementById('macdChart'), { ...opt, height: 120 });
-            charts.macd.addHistogramSeries({ color: '#26a69a', priceFormat: { type: 'volume' } }).setData(data.macd_data.map(d => ({ time: d.time, value: d.osc, color: d.osc > 0 ? '#ef5350' : '#26a69a' })));
-            charts.macd.addLineSeries({ color: '#2962ff', lineWidth: 1.5 }).setData(data.macd_data.map(d => ({ time: d.time, value: d.dif })));
-            charts.macd.addLineSeries({ color: '#ff9800', lineWidth: 1.5 }).setData(data.macd_data.map(d => ({ time: d.time, value: d.signal })));
-
-            charts.kd = LightweightCharts.createChart(document.getElementById('kdChart'), { ...opt, height: 120 });
-            charts.kd.addLineSeries({ color: '#2962ff', lineWidth: 1.5 }).setData(data.kd_data.map(d => ({ time: d.time, value: d.k })));
-            charts.kd.addLineSeries({ color: '#ff9800', lineWidth: 1.5 }).setData(data.kd_data.map(d => ({ time: d.time, value: d.d })));
-
-            charts.obv = LightweightCharts.createChart(document.getElementById('obvChart'), { ...opt, height: 120, timeScale: { visible: iv !== '1d', timeVisible: iv !== '1d' } });
-            charts.obv.addLineSeries({ color: '#2196f3', lineWidth: 2, priceFormat: { type: 'volume' } }).setData(data.obv_data);
-
-            const allCharts = [charts.main, charts.macd, charts.kd, charts.obv];
-            if (iv === '1d') {
-                charts.chip = LightweightCharts.createChart(document.getElementById('chipChart'), { ...opt, height: 120, timeScale: { visible: true } });
-                if (data.chip_data && data.chip_data.length > 0) charts.chip.addHistogramSeries({ priceFormat: { type: 'volume' } }).setData(data.chip_data.map(d => ({ time: d.time, value: d.value, color: d.value > 0 ? '#ef5350' : '#26a69a' })));
-                allCharts.push(charts.chip);
-            }
-
-            const sync = (s, t) => { s.timeScale().subscribeVisibleTimeRangeChange(r => { t.forEach(x => x.timeScale().setVisibleRange(r)); }); };
-            allCharts.forEach(s => sync(s, allCharts.filter(c => c !== s)));
-            charts.main.timeScale().fitContent();
-        }
-    </script>
-</body>
-</html>
+            for (let key in charts) { if (charts[key]) { try { charts[key].remove(); } catch
