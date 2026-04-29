@@ -1,213 +1,478 @@
-import os
-import json
-import datetime
-import traceback
-import re
-from flask import Flask, request, jsonify
-from flask_cors import CORS 
-import yfinance as yf
-import pandas as pd
-import numpy as np
-import google.generativeai as genai
-from FinMind.data import DataLoader
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 股票戰情室 - 防禦旗艦版</title>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        :root { --bg-dark: #050810; --panel-bg: #111520; --border-color: #232b3e; --text-main: #d1d4dc; --text-muted: #787b86; --blue: #2962ff; --red: #ef5350; --green: #26a69a; --orange: #ff9800; --ma5: #fdd835; --ma20: #ff4081; --ma60: #00bcd4; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg-dark); color: var(--text-main); margin: 0; padding: 15px; }
+        
+        .top-bar { display: flex; justify-content: space-between; align-items: center; background: var(--panel-bg); padding: 15px 20px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 15px; }
+        .search-group { display: flex; gap: 10px; width: 50%; }
+        input[type="text"], input[type="number"], select { padding: 10px; background: #0b0e14; border: 1px solid var(--border-color); color: white; border-radius: 4px; outline: none; font-weight: bold; }
+        button { padding: 10px 20px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; background: var(--blue); }
+        button:hover { background: #1e4bd8; }
+        button:disabled { background: var(--border-color); color: var(--text-muted); cursor: not-allowed; }
+        
+        .price-zone { display: none; align-items: baseline; gap: 15px; }
+        .current-price { font-size: 32px; font-weight: bold; color: var(--red); }
+        
+        .main-grid { display: grid; grid-template-columns: 4fr 3fr 3fr; gap: 15px; display: none; }
+        .column { display: flex; flex-direction: column; gap: 15px; }
+        
+        .chart-wrapper { background: var(--panel-bg); padding: 5px; border-radius: 8px; border: 1px solid var(--border-color); }
+        .chart-box { position: relative; width: 100%; }
+        .chart-title { position: absolute; z-index: 2; padding: 3px 6px; font-size: 11px; background: rgba(0,0,0,0.6); color: #fff; top: 5px; left: 5px; display: flex; gap: 10px; align-items: center; border-radius: 4px; }
+        .legend-ma5 { color: var(--ma5); } .legend-ma20 { color: var(--ma20); } .legend-ma60 { color: var(--ma60); }
+        .chart-legend { position: absolute; z-index: 10; font-size: 12px; color: #fff; background: rgba(0,0,0,0.8); border-radius: 4px; top: 30px; left: 5px; padding: 5px; display: none; border: 1px solid var(--border-color); }
+        
+        #mainChart { height: 400px; } .sub-chart { height: 120px; }
+        
+        .info-card { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; }
+        .card-header { font-size: 13px; font-weight: bold; color: var(--blue); border-bottom: 1px solid var(--border-color); padding-bottom: 8px; margin-bottom: 12px; }
+        
+        .f-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .f-item { background: #0b0e14; padding: 10px; border-radius: 4px; text-align: center; }
+        .f-label { font-size: 11px; color: var(--text-muted); }
+        .f-val { font-size: 18px; font-weight: bold; color: white; margin-top: 5px; }
+        .stars { color: var(--orange); font-size: 22px; letter-spacing: 2px; }
+        
+        .chip-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; margin-top: 5px; }
+        .chip-table th { background: #0b0e14; padding: 6px; color: var(--text-muted); border-bottom: 1px solid var(--border-color); font-weight: normal; }
+        .chip-table td { padding: 6px; border-bottom: 1px solid #1a1e29; }
+        .txt-red { color: var(--red); } .txt-green { color: var(--green); }
 
-app = Flask(__name__)
-CORS(app) 
+        .path-box { background: #0b0e14; border-left: 4px solid var(--orange); padding: 10px; margin-bottom: 10px; border-radius: 4px; }
+        .path-title { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+        .path-desc { font-size: 14px; color: white; }
 
-api_key = os.environ.get("GOOGLE_API_KEY")
-if api_key:
-    genai.configure(api_key=api_key)
+        .quant-panel { display: flex; justify-content: space-around; background: var(--panel-bg); padding: 15px; border-radius: 8px; border: 1px dashed var(--red); margin-bottom: 15px; }
+        .quant-item { text-align: center; }
+        .quant-item .label { font-size: 12px; color: var(--text-muted); margin-bottom: 5px; }
+        .quant-item .val { font-size: 22px; font-weight: bold; font-family: monospace; color: white; }
 
-@app.route('/')
-def home():
-    return "AI 戰情室大腦運轉中！(搭載自動上櫃股切換與雙引擎)"
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; margin: 10px 0; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: var(--blue); cursor: pointer; margin-top: -6px; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; background: var(--border-color); border-radius: 2px; }
 
-@app.route('/predict', methods=['GET'])
-def predict():
-    symbol = request.args.get('symbol', '2330.TW')
-    interval = request.args.get('interval', '1d')
+        #sysMessage { margin-bottom: 15px; font-size: 14px; }
+        .advice-list li { margin-bottom: 8px; }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <div class="search-group">
+            <input type="text" id="symbol" value="6147" placeholder="輸入台股代碼">
+            <select id="intervalSelector">
+                <option value="1d" selected>日K線</option>
+                <option value="60m">60分K</option>
+                <option value="15m">15分K</option>
+                <option value="5m">5分K</option>
+                <option value="1m">1分K (超短線)</option>
+            </select>
+            <button id="analyzeBtn" onclick="analyze()">啟動全盤掃描</button>
+        </div>
+        <div class="price-zone" id="priceZone">
+            <div id="stockTitle" style="font-weight:bold; font-size:24px;">--</div>
+            <div class="current-price" id="currentPriceDisplay">0.00</div>
+        </div>
+    </div>
     
-    valid_intervals = ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h', '1d', '5d', '1wk', '1mo', '3mo']
-    if interval not in valid_intervals:
-        interval = '1d'
-
-    try:
-        if interval in ['1m', '2m', '5m']:
-            period = "5d"
-        elif interval in ['15m', '30m', '60m', '90m', '1h']:
-            period = "1mo"
-        else:
-            period = "6mo"
-
-        # 1. 抓取技術面數據
-        stock = yf.Ticker(symbol)
-        df = stock.history(period=period, interval=interval)
+    <div id="sysMessage"></div>
+    
+    <div class="main-grid" id="mainGrid">
+        <div class="column">
+            <div class="chart-wrapper">
+                <div class="chart-box">
+                    <div class="chart-title">
+                        <span id="mainChartTitle">K線</span>
+                        <span class="legend-ma5" id="l-ma5">MA5: --</span>
+                        <span class="legend-ma20" id="l-ma20">MA20: --</span>
+                        <span class="legend-ma60" id="l-ma60">MA60: --</span>
+                    </div>
+                    <div class="chart-legend" id="chartLegend"></div>
+                    <div id="mainChart"></div>
+                </div>
+                <div class="chart-box"><div class="chart-title">MACD (12,26,9)</div><div id="macdChart" class="sub-chart"></div></div>
+                <div class="chart-box"><div class="chart-title">KD (9,3,3)</div><div id="kdChart" class="sub-chart"></div></div>
+                <div class="chart-box"><div class="chart-title">OBV (能量潮)</div><div id="obvChart" class="sub-chart"></div></div>
+                <div class="chart-box" id="chipBox"><div class="chart-title">三大法人買賣超</div><div id="chipChart" class="sub-chart"></div></div>
+            </div>
+        </div>
         
-        # 【核心修復】：自動備援上櫃代碼 (.TWO) 搜尋
-        if df.empty and symbol.endswith('.TW'):
-            fallback_symbol = symbol.replace('.TW', '.TWO')
-            fallback_stock = yf.Ticker(fallback_symbol)
-            fallback_df = fallback_stock.history(period=period, interval=interval)
-            if not fallback_df.empty:
-                symbol = fallback_symbol
-                stock = fallback_stock
-                df = fallback_df
+        <div class="column">
+            <div class="info-card" id="chipTableCard">
+                <div class="card-header">三大法人近 10 日買賣超 (張)</div>
+                <table class="chip-table">
+                    <thead><tr><th>日期</th><th>外資</th><th>投信</th><th>自營</th><th>合計</th></tr></thead>
+                    <tbody id="chipTableBody"></tbody>
+                </table>
+            </div>
 
-        if df.empty:
-            return jsonify({"status": "error", "message": f"無法獲取 {symbol} 的數據。確認代碼或等待開盤資料更新。"}), 400
+            <div class="info-card">
+                <div class="card-header">可能路徑推演</div>
+                <div class="path-box" style="border-left-color: var(--red);">
+                    <div class="path-title">🔼 突破路徑</div>
+                    <div class="path-desc" id="ai-path-up">--</div>
+                </div>
+                <div class="path-box" style="border-left-color: var(--green);">
+                    <div class="path-title">🔽 防守路徑</div>
+                    <div class="path-desc" id="ai-path-down">--</div>
+                </div>
+            </div>
 
-        df['MA5'] = df['Close'].rolling(window=5).mean()
-        df['MA10'] = df['Close'].rolling(window=10).mean()
-        df['MA20'] = df['Close'].rolling(window=20).mean()
-        df['MA60'] = df['Close'].rolling(window=60).mean()
+            <div class="info-card" style="border-color: var(--blue);">
+                <div class="card-header" style="color: var(--blue);">📊 動態估值計算器</div>
+                <div style="margin-bottom: 15px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                        <span style="font-size:12px; color:var(--text-muted)">1. 預估未來 EPS (元)</span><span id="calc-eps-val" style="font-weight:bold; color:#fff">0.00</span>
+                    </div>
+                    <input type="range" id="slider-eps" min="0" max="150" step="0.5" value="0" oninput="updateCalc()">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                        <span style="font-size:12px; color:var(--text-muted)">2. 目標本益比</span><span id="calc-pe-val" style="font-weight:bold; color:#fff">15.0</span>
+                    </div>
+                    <input type="range" id="slider-pe" min="5" max="80" step="1" value="15" oninput="updateCalc()">
+                </div>
+                <div style="background:#0b0e14; padding:15px; border-radius:6px; text-align:center; border: 1px solid var(--border-color);">
+                    <div style="font-size:12px; color:var(--text-muted); margin-bottom:5px;">合理股價推算</div>
+                    <div id="calc-result" style="font-size:28px; font-weight:bold; color:var(--blue); font-family:monospace;">--</div>
+                    <div id="calc-status" style="font-size:14px; margin-top:8px; font-weight:bold;">--</div>
+                </div>
+            </div>
 
-        df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
-        df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
-        df['DIF'] = df['EMA12'] - df['EMA26']
-        df['MACD_Signal'] = df['DIF'].ewm(span=9, adjust=False).mean()
-        df['OSC'] = df['DIF'] - df['MACD_Signal']
+            <div class="info-card" style="border-color: var(--green);">
+                <div class="card-header" style="color: var(--green);">🛡️ 資金控管計算機 (防禦工事)</div>
+                <div style="display:flex; gap:10px; margin-bottom: 10px;">
+                    <div style="flex:1;">
+                        <div style="font-size:12px; color:var(--text-muted); margin-bottom:5px;">目前股價</div>
+                        <div id="risk-current-price" style="font-size:18px; font-weight:bold; color:white; background:#0b0e14; padding:8px; border-radius:4px; border:1px solid var(--border-color); text-align:center;">0.00</div>
+                    </div>
+                    <div style="flex:1;">
+                        <div style="font-size:12px; color:var(--text-muted); margin-bottom:5px;">嚴格停損價 (自訂/AI)</div>
+                        <input type="number" id="risk-stop-loss" value="0" step="0.5" style="width:100%; box-sizing:border-box; padding:8px; text-align:center;" oninput="updateRiskCalc()">
+                    </div>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                        <span style="font-size:12px; color:var(--text-muted)">單筆最高可承受虧損 (元)</span>
+                    </div>
+                    <input type="number" id="risk-max-loss" value="5000" step="1000" style="width:100%; box-sizing:border-box;" oninput="updateRiskCalc()">
+                </div>
+                <div style="background:#0b0e14; padding:15px; border-radius:6px; text-align:center; border: 1px solid var(--border-color);">
+                    <div style="font-size:12px; color:var(--text-muted); margin-bottom:5px;">依風險承受度之安全進場上限</div>
+                    <div id="risk-result" style="font-size:28px; font-weight:bold; color:var(--green); font-family:monospace;">0 張</div>
+                    <div id="risk-status" style="font-size:13px; margin-top:8px; color:var(--text-muted);">請設定停損與虧損上限</div>
+                </div>
+            </div>
+        </div>
 
-        df['9_high'] = df['High'].rolling(9).max()
-        df['9_low'] = df['Low'].rolling(9).min()
-        df['RSV'] = (df['Close'] - df['9_low']) / (df['9_high'] - df['9_low']) * 100
-        df['RSV'] = df['RSV'].replace([np.inf, -np.inf], np.nan)
-        
-        rsv_list = df['RSV'].fillna(50).tolist()
-        K, D = [], []
-        prev_k, prev_d = 50, 50
-        for rsv in rsv_list:
-            curr_k = (2/3) * prev_k + (1/3) * rsv
-            curr_d = (2/3) * prev_d + (1/3) * curr_k
-            K.append(curr_k)
-            D.append(curr_d)
-            prev_k, prev_d = curr_k, curr_d
-        df['K'], df['D'] = K, D
-        
-        df['Volume_Dir'] = np.sign(df['Close'].diff()).fillna(0)
-        df['OBV'] = (df['Volume'] * df['Volume_Dir']).cumsum()
+        <div class="column">
+            <div class="info-card" style="text-align:center; border-color:var(--orange);">
+                <div class="card-header" style="justify-content:center; color:var(--orange);">AI 綜合評估</div>
+                <div id="ai-signal" style="font-size:24px; font-weight:bold; margin-bottom:5px;">--</div>
+                <div class="stars" id="ai-stars">☆☆☆☆☆</div>
+            </div>
 
-        df = df.fillna(0)
-        df_chart = df.tail(80)
-        
-        chart_data, macd_data, kd_data, obv_data = [], [], [], []
-        for date, row in df_chart.iterrows():
-            time_val = date.strftime('%Y-%m-%d') if interval == '1d' else int(date.timestamp())
-            chart_data.append({
-                "time": time_val, "open": round(row['Open'],2), "high": round(row['High'],2), "low": round(row['Low'],2), "close": round(row['Close'],2),
-                "ma5": row['MA5'], "ma10": row['MA10'], "ma20": row['MA20'], "ma60": row['MA60']
-            })
-            macd_data.append({"time": time_val, "dif": row['DIF'], "signal": row['MACD_Signal'], "osc": row['OSC']})
-            kd_data.append({"time": time_val, "k": row['K'], "d": row['D']})
-            obv_data.append({"time": time_val, "value": row['OBV']})
+            <div class="quant-panel">
+                <div class="quant-item" style="grid-column: span 2;"><div class="label" style="color:var(--red);">⚡ 嚴選雙重濾網已啟動</div></div>
+                <div class="quant-item"><div class="label">嚴選勝率</div><div class="val" id="bt-winrate">0%</div></div>
+                <div class="quant-item"><div class="label">累計報酬</div><div class="val" id="bt-return">0%</div></div>
+            </div>
 
-        current_price = round(float(df['Close'].iloc[-1]), 2)
-        display_name = symbol
+            <div class="info-card">
+                <div class="card-header">公司基本面體檢</div>
+                <div class="f-grid">
+                    <div class="f-item"><div class="f-label">過去四季 EPS</div><div class="f-val" id="f-eps">--</div></div>
+                    <div class="f-item"><div class="f-label">目前本益比 (P/E)</div><div class="f-val" id="f-pe">--</div></div>
+                </div>
+            </div>
 
-        fundamental_data = {"eps": "--", "pe_ratio": "--"}
-        try:
-            info = stock.info
-            display_name = info.get('shortName', symbol)
-            eps = info.get("trailingEps")
-            pe = info.get("trailingPE")
-            if eps is not None: fundamental_data["eps"] = round(eps, 2)
-            if pe is not None: fundamental_data["pe_ratio"] = round(pe, 2)
-        except Exception:
-            pass
+            <div class="info-card">
+                <div class="card-header">短線關鍵價位</div>
+                <div class="f-grid">
+                    <div class="f-item"><div class="f-label">壓力區</div><div class="f-val" id="ai-pressure" style="color:var(--green)">--</div></div>
+                    <div class="f-item"><div class="f-label">支撐區 (預設防守)</div><div class="f-val" id="ai-support" style="color:var(--red)">--</div></div>
+                </div>
+            </div>
+            
+            <div class="info-card" style="flex: 1;">
+                <div class="card-header">AI 戰術建議 (技術與籌碼分析)</div>
+                <ul id="ai-advice" class="advice-list" style="font-size:14px; color:#a5d6a7; line-height:1.6; padding-left:20px;"></ul>
+            </div>
+        </div>
+    </div>
 
-        pure_symbol = symbol.replace('.TW', '').replace('.TWO', '')
-        chip_info, chip_chart_data, chip_table_data = "非日線層級", [], []
-        
-        if interval == '1d':
-            try:
-                dl = DataLoader()
-                start_date = (datetime.datetime.now() - datetime.timedelta(days=45)).strftime('%Y-%m-%d')
-                df_chips = dl.taiwan_stock_institutional_investors(stock_id=pure_symbol, start_date=start_date)
-                if isinstance(df_chips, pd.DataFrame) and not df_chips.empty:
-                    df_chips['net_buy'] = df_chips['buy'] - df_chips['sell']
-                    df_chips['name'] = df_chips['name'].replace({
-                        '外資及陸資(不含外資自營商)': '外資', '外資及陸資': '外資',
-                        '自營商(自行買賣)': '自營', '自營商(避險)': '自營', '自營商': '自營'
-                    })
-                    pivot_df = df_chips.groupby(['date', 'name'])['net_buy'].sum().unstack(fill_value=0).reset_index()
-                    for col in ['外資', '投信', '自營']:
-                        if col not in pivot_df.columns: pivot_df[col] = 0
-                    pivot_df['合計'] = pivot_df['外資'] + pivot_df['投信'] + pivot_df['自營']
-                    pivot_df = pivot_df[pivot_df['合計'] != 0].copy()
+    <script>
+        let charts = {};
+        let seriesDict = {};
+        let currentAnalysis = { symbol: '', price: 0 };
+
+        async function analyze() {
+            const symbolInput = document.getElementById('symbol').value.trim();
+            const symbol = /^\d+$/.test(symbolInput) ? symbolInput + ".TW" : symbolInput;
+            document.getElementById('symbol').value = symbol;
+            const interval = document.getElementById('intervalSelector').value;
+            const btn = document.getElementById('analyzeBtn');
+            const sysMsg = document.getElementById('sysMessage');
+            
+            document.getElementById('mainGrid').style.display = "none";
+            document.getElementById('priceZone').style.display = "none";
+            btn.disabled = true; btn.innerText = "掃描中...";
+            sysMsg.innerHTML = '<span style="color:var(--blue);">🔄 正在調度大腦解析數據 (初次喚醒機房可能需時 50 秒)...</span>';
+            
+            try {
+                const res = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${symbol}&interval=${interval}`);
+                
+                // 【核心修復】：更精準的錯誤攔截與提示
+                if (!res.ok) {
+                    let errStr = "伺服器無回應 (可能是免費機房正在開機，請等 1 分鐘後再試一次)";
+                    try { 
+                        const errJ = await res.json(); 
+                        if(errJ.message) errStr = errJ.message; 
+                    } catch(e){}
+                    throw new Error(errStr);
+                }
+
+                const data = await res.json();
+                
+                if(data.status === "success") {
+                    sysMsg.innerHTML = "";
+                    currentAnalysis.symbol = data.symbol; 
+                    currentAnalysis.price = parseFloat(data.current_price);
                     
-                    for _, r in pivot_df.iterrows():
-                        chip_chart_data.append({"time": str(r['date']), "value": round(float(r['合計']) / 1000, 2)})
-                    chip_info = pivot_df.tail(15).to_string() 
+                    document.getElementById('mainGrid').style.display = "grid";
+                    document.getElementById('priceZone').style.display = "flex";
+                    document.getElementById('stockTitle').innerText = data.symbol.replace('.TW', '').replace('.TWO', '');
+                    document.getElementById('currentPriceDisplay').innerText = currentAnalysis.price.toFixed(2);
                     
-                    last_10 = pivot_df.tail(10).iloc[::-1]
-                    for _, r in last_10.iterrows():
-                        try:
-                            chip_table_data.append({
-                                "date": str(r['date'])[5:], 
-                                "foreign": round(float(r.get('外資', 0)) / 1000, 1),
-                                "trust": round(float(r.get('投信', 0)) / 1000, 1),
-                                "dealer": round(float(r.get('自營', 0)) / 1000, 1),
-                                "total": round(float(r.get('合計', 0)) / 1000, 1)
-                            })
-                        except: pass
-            except Exception as e:
-                print("籌碼解析異常:", e)
+                    document.getElementById('mainChartTitle').innerText = `${document.getElementById('intervalSelector').options[document.getElementById('intervalSelector').selectedIndex].text}`;
+                    
+                    const isDaily = (data.interval === '1d');
+                    document.getElementById('chipBox').style.display = isDaily ? "block" : "none";
+                    document.getElementById('chipTableCard').style.display = isDaily ? "block" : "none";
+                    
+                    if (isDaily && data.chip_table) {
+                        const tbody = document.getElementById('chipTableBody');
+                        tbody.innerHTML = data.chip_table.map(r => {
+                            const fColor = r.foreign > 0 ? 'txt-red' : (r.foreign < 0 ? 'txt-green' : '');
+                            const tColor = r.trust > 0 ? 'txt-red' : (r.trust < 0 ? 'txt-green' : '');
+                            const dColor = r.dealer > 0 ? 'txt-red' : (r.dealer < 0 ? 'txt-green' : '');
+                            const totColor = r.total > 0 ? 'txt-red' : (r.total < 0 ? 'txt-green' : '');
+                            return `<tr><td>${r.date}</td><td class="${fColor}">${r.foreign}</td><td class="${tColor}">${r.trust}</td><td class="${dColor}">${r.dealer}</td><td class="${totColor}" style="font-weight:bold;">${r.total}</td></tr>`;
+                        }).join('');
+                    }
+                    
+                    document.getElementById('f-eps').innerText = data.fundamental.eps || '--';
+                    document.getElementById('f-pe').innerText = data.fundamental.pe_ratio || '--';
+                    
+                    let epsVal = parseFloat(data.fundamental.eps);
+                    let peVal = parseFloat(data.fundamental.pe_ratio);
+                    document.getElementById('slider-eps').value = (!isNaN(epsVal) && epsVal > 0) ? epsVal : 0;
+                    document.getElementById('slider-pe').value = (!isNaN(peVal) && peVal > 0 && peVal < 80) ? peVal : 15;
+                    updateCalc();
 
-        prompt = (
-            f"你是台股頂級量化操盤手。分析 {display_name} ({interval})。\n"
-            f"必須只輸出純 JSON，不可有 Markdown。\n"
-            f"格式嚴格規定：\n"
-            f"{{\n"
-            f"  \"signal\": \"偏多/偏空/觀望\",\n"
-            f"  \"pressure\": \"價格\",\n"
-            f"  \"support\": \"價格\",\n"
-            f"  \"stop_loss\": \"價格\",\n"
-            f"  \"path_up\": \"上漲路徑推演\",\n"
-            f"  \"path_down\": \"下跌路徑推演\",\n"
-            f"  \"stars\": 1到5整數,\n"
-            f"  \"advice\": [\n"
-            f"    \"技術面：(請詳細解讀均線、MACD與KD)\",\n"
-            f"    \"籌碼面：(請解讀法人買賣超動向)\",\n"
-            f"    \"總結建議：(給出明確的進出場策略)\"\n"
-            f"  ]\n"
-            f"}}\n\n"
-            f"【基本面】：{fundamental_data}\n【技術面】：{df.tail(15).to_string()}\n【籌碼面】：{chip_info}"
-        )
-        
-        ai_data = None
-        models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro-latest']
-        
-        for model_name in models_to_try:
-            try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.1))
-                text = response.text
-                
-                text = re.sub(r'```json\n?', '', text)
-                text = re.sub(r'```\n?', '', text)
-                text = text.strip()
-                
-                start = text.find('{')
-                end = text.rfind('}')
-                if start != -1 and end != -1:
-                    ai_data = json.loads(text[start:end+1])
-                    break
-                else:
-                    ai_data = json.loads(text)
-                    break
-            except Exception:
-                continue
-                
-        if not ai_data:
-            ai_data = {"signal": "系統繁忙", "pressure": "--", "support": "--", "stop_loss": "--", "path_up": "--", "path_down": "--", "stars": 0, "advice": ["Google AI 伺服器超時", "但圖表與量化訊號已為您載入", "請稍後重新點擊掃描"]}
+                    const ai = data.ai_analysis;
+                    document.getElementById('ai-signal').innerText = ai.signal || '--';
+                    if(ai.signal) {
+                        document.getElementById('ai-signal').style.color = (ai.signal.includes('多') || ai.signal.includes('強')) ? 'var(--red)' : ((ai.signal.includes('空') || ai.signal.includes('弱') || ai.signal.includes('失敗')) ? 'var(--green)' : 'var(--orange)');
+                    }
+                    
+                    document.getElementById('ai-pressure').innerText = ai.pressure || '--';
+                    document.getElementById('ai-support').innerText = ai.support || '--';
+                    document.getElementById('ai-path-up').innerText = ai.path_up || '--';
+                    document.getElementById('ai-path-down').innerText = ai.path_down || '--';
+                    
+                    let stars = parseInt(ai.stars) || 0;
+                    document.getElementById('ai-stars').innerText = '★'.repeat(stars) + '☆'.repeat(5-stars);
+                    const adviceUl = document.getElementById('ai-advice');
+                    adviceUl.innerHTML = Array.isArray(ai.advice) ? ai.advice.map(t => `<li>${t}</li>`).join('') : `<li>${ai.advice}</li>`;
 
-        return jsonify({
-            "status": "success", "symbol": symbol, "current_price": current_price, "interval": interval,
-            "chart_data": chart_data, "macd_data": macd_data, "kd_data": kd_data, 
-            "obv_data": obv_data, "chip_data": chip_chart_data, "chip_table": chip_table_data,
-            "fundamental": fundamental_data, "ai_analysis": ai_data
-        })
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"內部伺服器錯誤: {str(e)}"}), 500
+                    let aiStopLossRaw = ai.stop_loss || '';
+                    let parsedSL = parseFloat(aiStopLossRaw.replace(/[^\d.]/g, ''));
+                    if (!isNaN(parsedSL) && parsedSL > 0) {
+                        document.getElementById('risk-stop-loss').value = parsedSL;
+                    } else {
+                        document.getElementById('risk-stop-loss').value = (currentAnalysis.price * 0.95).toFixed(2);
+                    }
+                    updateRiskCalc();
 
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
+                    runBacktest(data.chart_data, data.kd_data, data.macd_data);
+                    renderCharts(data);
+                } else { sysMsg.innerHTML = `<span style="color:var(--red);">❌ 分析出錯：${data.message}</span>`; }
+            } catch(e) { sysMsg.innerHTML = `<span style="color:var(--red);">❌ 連線失敗：${e.message}</span>`; }
+            finally { btn.disabled = false; btn.innerText = "啟動全盤掃描"; }
+        }
+
+        function updateCalc() {
+            let eps = parseFloat(document.getElementById('slider-eps').value);
+            let pe = parseFloat(document.getElementById('slider-pe').value);
+            document.getElementById('calc-eps-val').innerText = eps.toFixed(2);
+            document.getElementById('calc-pe-val').innerText = pe.toFixed(1);
+            let targetPrice = eps * pe;
+            document.getElementById('calc-result').innerText = targetPrice.toFixed(2);
+
+            if(currentAnalysis.price > 0) {
+                let diff = ((targetPrice - currentAnalysis.price) / currentAnalysis.price) * 100;
+                let statusEl = document.getElementById('calc-status');
+                if(diff > 10) { statusEl.innerText = `📈 潛在空間: +${diff.toFixed(1)}%`; statusEl.style.color = "var(--red)"; } 
+                else if(diff < -10) { statusEl.innerText = `📉 溢價風險: ${diff.toFixed(1)}%`; statusEl.style.color = "var(--green)"; } 
+                else { statusEl.innerText = `⚖️ 目前處於合理估值`; statusEl.style.color = "var(--orange)"; }
+            }
+        }
+
+        function updateRiskCalc() {
+            let cp = currentAnalysis.price;
+            let sl = parseFloat(document.getElementById('risk-stop-loss').value);
+            let maxLoss = parseFloat(document.getElementById('risk-max-loss').value);
+
+            document.getElementById('risk-current-price').innerText = cp > 0 ? cp.toFixed(2) : '0.00';
+
+            if (cp > 0 && sl > 0 && cp > sl && maxLoss > 0) {
+                let riskPerShare = cp - sl;
+                let riskPerLot = riskPerShare * 1000;
+                let maxLots = maxLoss / riskPerLot;
+
+                document.getElementById('risk-result').innerText = maxLots.toFixed(2) + ' 張';
+                document.getElementById('risk-status').innerText = `買進每張潛在虧損: ${riskPerLot.toFixed(0)} 元`;
+                document.getElementById('risk-result').style.color = "var(--green)";
+                document.getElementById('risk-status').style.color = "var(--text-muted)";
+            } else if (sl >= cp) {
+                document.getElementById('risk-result').innerText = '0 張';
+                document.getElementById('risk-status').innerText = '停損價不可高於或等於現價！';
+                document.getElementById('risk-result').style.color = "var(--text-muted)";
+                document.getElementById('risk-status').style.color = "var(--red)";
+            } else {
+                document.getElementById('risk-result').innerText = '0 張';
+                document.getElementById('risk-status').innerText = '請輸入有效數字進行試算';
+                document.getElementById('risk-result').style.color = "var(--text-muted)";
+            }
+        }
+
+        function runBacktest(klineData, kdData, macdData) {
+            let holding = false, buyPrice = 0, totalReturn = 0, wins = 0, losses = 0;
+            let priceMap = {}; klineData.forEach(d => { priceMap[d.time] = d.close; });
+            let ma20Map = {}; klineData.forEach(d => { ma20Map[d.time] = d.ma20; });
+            let macdMap = {}; macdData.forEach(d => { macdMap[d.time] = d.osc; });
+
+            for (let i = 1; i < kdData.length; i++) {
+                const p = kdData[i - 1], c = kdData[i];
+                const cp = priceMap[c.time];
+                const ma20 = ma20Map[c.time] || 0;
+                const osc = macdMap[c.time] || 0;
+                if(!cp) continue;
+
+                let isGoldenCross = (p.k <= p.d && c.k > c.d);
+                let isTrendUp = (cp > ma20) && (osc > 0);
+
+                if (!holding && isGoldenCross && isTrendUp) { 
+                    holding = true; buyPrice = cp; 
+                }
+                else if (holding && p.k >= p.d && c.k < c.d) {
+                    holding = false; let ret = ((cp - buyPrice) / buyPrice) * 100; totalReturn += ret;
+                    if (ret > 0) wins++; else losses++;
+                }
+            }
+            if (holding) {
+                let ret = ((klineData[klineData.length-1].close - buyPrice) / buyPrice) * 100; totalReturn += ret;
+                if (ret > 0) wins++; else losses++;
+            }
+            let total = wins + losses;
+            let wr = total > 0 ? ((wins / total) * 100).toFixed(1) : 0;
+            document.getElementById('bt-winrate').innerText = `${wr}% (${total}次)`; document.getElementById('bt-winrate').style.color = wr > 50 ? 'var(--red)' : (wr == 0 ? '#fff' : 'var(--green)');
+            document.getElementById('bt-return').innerText = `${totalReturn > 0 ? '+' : ''}${totalReturn.toFixed(2)}%`; document.getElementById('bt-return').style.color = totalReturn >= 0 ? 'var(--red)' : 'var(--green)';
+        }
+
+        function renderCharts(data) {
+            for (let key in charts) { if (charts[key]) { try { charts[key].remove(); } catch (e) {} } }
+            charts = {}; seriesDict = {};
+
+            const iv = data.interval;
+            const opt = { layout: { background: { color: '#111520' }, textColor: '#787b86' }, grid: { vertLines: { color: '#232b3e' }, horzLines: { color: '#232b3e' } }, crosshair: { mode: LightweightCharts.CrosshairMode.Normal }, timeScale: { visible: false, timeVisible: iv !== '1d' } };
+
+            charts.main = LightweightCharts.createChart(document.getElementById('mainChart'), { ...opt, height: 400 });
+            seriesDict.candle = charts.main.addCandlestickSeries({ upColor: '#ef5350', downColor: '#26a69a', borderVisible: false, wickUpColor: '#ef5350', wickDownColor: '#26a69a' });
+            seriesDict.candle.setData(data.chart_data);
+
+            seriesDict.ma5 = charts.main.addLineSeries({ color: '#fdd835', lineWidth: 1, crosshairMarkerVisible: false });
+            seriesDict.ma5.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma5 })));
+            seriesDict.ma20 = charts.main.addLineSeries({ color: '#ff4081', lineWidth: 1, crosshairMarkerVisible: false });
+            seriesDict.ma20.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma20 })));
+            seriesDict.ma60 = charts.main.addLineSeries({ color: '#00bcd4', lineWidth: 1, crosshairMarkerVisible: false });
+            seriesDict.ma60.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma60 })));
+
+            const legend = document.getElementById('chartLegend');
+            const lma5 = document.getElementById('l-ma5');
+            const lma20 = document.getElementById('l-ma20');
+            const lma60 = document.getElementById('l-ma60');
+
+            charts.main.subscribeCrosshairMove(param => {
+                if (param.time && param.seriesData.get(seriesDict.candle)) {
+                    const p = param.seriesData.get(seriesDict.candle);
+                    let tStr = param.time;
+                    if (typeof param.time === 'number') {
+                        tStr = new Date(param.time * 1000).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+                    }
+                    legend.style.display = 'block';
+                    legend.innerHTML = `${tStr}<br>開 <span style="color:#fff">${p.open.toFixed(2)}</span><br>高 <span style="color:var(--red)">${p.high.toFixed(2)}</span><br>低 <span style="color:var(--green)">${p.low.toFixed(2)}</span><br>收 <span style="color:#ff9800">${p.close.toFixed(2)}</span>`;
+                    
+                    const m5 = param.seriesData.get(seriesDict.ma5); lma5.innerText = `MA5: ${m5 ? m5.value.toFixed(2) : '--'}`;
+                    const m20 = param.seriesData.get(seriesDict.ma20); lma20.innerText = `MA20: ${m20 ? m20.value.toFixed(2) : '--'}`;
+                    const m60 = param.seriesData.get(seriesDict.ma60); lma60.innerText = `MA60: ${m60 ? m60.value.toFixed(2) : '--'}`;
+                } else { legend.style.display = 'none'; }
+            });
+
+            if (data.kd_data && data.kd_data.length > 1) {
+                let markers = [];
+                let macdMap = {}; data.macd_data.forEach(d => { macdMap[d.time] = d.osc; });
+                let ma20Map = {}; data.chart_data.forEach(d => { ma20Map[d.time] = d.ma20; });
+                let priceMap = {}; data.chart_data.forEach(d => { priceMap[d.time] = d.close; });
+
+                for (let i = 1; i < data.kd_data.length; i++) {
+                    const p = data.kd_data[i - 1], c = data.kd_data[i];
+                    let cp = priceMap[c.time];
+                    let ma20 = ma20Map[c.time] || 0;
+                    let osc = macdMap[c.time] || 0;
+
+                    let isGoldenCross = (p.k <= p.d && c.k > c.d);
+                    let isTrendUp = (cp > ma20) && (osc > 0);
+
+                    if (isGoldenCross && isTrendUp) {
+                        markers.push({ time: c.time, position: 'belowBar', color: '#ef5350', shape: 'arrowUp', text: '嚴選買' });
+                    }
+                    else if (p.k >= p.d && c.k < c.d) {
+                        markers.push({ time: c.time, position: 'aboveBar', color: '#26a69a', shape: 'arrowDown', text: '賣' });
+                    }
+                }
+                seriesDict.candle.setMarkers(markers);
+            }
+
+            charts.macd = LightweightCharts.createChart(document.getElementById('macdChart'), { ...opt, height: 120 });
+            charts.macd.addHistogramSeries({ color: '#26a69a', priceFormat: { type: 'volume' } }).setData(data.macd_data.map(d => ({ time: d.time, value: d.osc, color: d.osc > 0 ? '#ef5350' : '#26a69a' })));
+            charts.macd.addLineSeries({ color: '#2962ff', lineWidth: 1.5 }).setData(data.macd_data.map(d => ({ time: d.time, value: d.dif })));
+            charts.macd.addLineSeries({ color: '#ff9800', lineWidth: 1.5 }).setData(data.macd_data.map(d => ({ time: d.time, value: d.signal })));
+
+            charts.kd = LightweightCharts.createChart(document.getElementById('kdChart'), { ...opt, height: 120 });
+            charts.kd.addLineSeries({ color: '#2962ff', lineWidth: 1.5 }).setData(data.kd_data.map(d => ({ time: d.time, value: d.k })));
+            charts.kd.addLineSeries({ color: '#ff9800', lineWidth: 1.5 }).setData(data.kd_data.map(d => ({ time: d.time, value: d.d })));
+
+            charts.obv = LightweightCharts.createChart(document.getElementById('obvChart'), { ...opt, height: 120, timeScale: { visible: iv !== '1d', timeVisible: iv !== '1d' } });
+            charts.obv.addLineSeries({ color: '#2196f3', lineWidth: 2, priceFormat: { type: 'volume' } }).setData(data.obv_data);
+
+            const allCharts = [charts.main, charts.macd, charts.kd, charts.obv];
+            if (iv === '1d') {
+                charts.chip = LightweightCharts.createChart(document.getElementById('chipChart'), { ...opt, height: 120, timeScale: { visible: true } });
+                if (data.chip_data && data.chip_data.length > 0) charts.chip.addHistogramSeries({ priceFormat: { type: 'volume' } }).setData(data.chip_data.map(d => ({ time: d.time, value: d.value, color: d.value > 0 ? '#ef5350' : '#26a69a' })));
+                allCharts.push(charts.chip);
+            }
+
+            const sync = (s, t) => { s.timeScale().subscribeVisibleTimeRangeChange(r => { t.forEach(x => x.timeScale().setVisibleRange(r)); }); };
+            allCharts.forEach(s => sync(s, allCharts.filter(c => c !== s)));
+            charts.main.timeScale().fitContent();
+        }
+    </script>
+</body>
+</html>
