@@ -27,11 +27,8 @@ RADAR_WATCHLIST = [
 
 @app.route('/')
 def home():
-    return "AI 戰情室大腦運轉中！(搭載多執行緒超光速雷達)"
+    return "AI 戰情室大腦運轉中！(搭載籌碼X光透視引擎)"
 
-# ==========================================
-# 渦輪增壓：獨立的雷達掃描函數
-# ==========================================
 def check_radar_symbol(symbol):
     try:
         stock = yf.Ticker(symbol)
@@ -90,28 +87,21 @@ def check_radar_symbol(symbol):
 def radar():
     matched_stocks = []
     try:
-        # 使用 15 個工人(執行緒)同時去掃描
         with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
             results = executor.map(check_radar_symbol, RADAR_WATCHLIST)
             for r in results:
                 if r: matched_stocks.append(r)
-        
         return jsonify({"status": "success", "matches": matched_stocks})
     except Exception as e:
-        print("雷達系統錯誤:", traceback.format_exc())
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# ==========================================
-# 個股分析主航線
-# ==========================================
 @app.route('/predict', methods=['GET'])
 def predict():
     symbol = request.args.get('symbol', '2330.TW')
     interval = request.args.get('interval', '1d')
     
     valid_intervals = ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h', '1d', '5d', '1wk', '1mo', '3mo']
-    if interval not in valid_intervals:
-        interval = '1d'
+    if interval not in valid_intervals: interval = '1d'
 
     try:
         if interval in ['1m', '2m', '5m']: period = "5d"
@@ -184,8 +174,10 @@ def predict():
             if pe is not None: fundamental_data["pe_ratio"] = round(pe, 2)
         except: pass
 
+        # === 【X光透視：分離籌碼陣列】 ===
         pure_symbol = symbol.replace('.TW', '').replace('.TWO', '')
         chip_info, chip_chart_data, chip_table_data = "非日線層級", [], []
+        foreign_data, trust_data = [], []
         
         if interval == '1d':
             try:
@@ -200,16 +192,27 @@ def predict():
                         if col not in pivot_df.columns: pivot_df[col] = 0
                     pivot_df['合計'] = pivot_df['外資'] + pivot_df['投信'] + pivot_df['自營']
                     pivot_df = pivot_df[pivot_df['合計'] != 0].copy()
+                    
                     for _, r in pivot_df.iterrows():
-                        chip_chart_data.append({"time": str(r['date']), "value": round(float(r['合計']) / 1000, 2)})
+                        time_str = str(r['date'])
+                        chip_chart_data.append({"time": time_str, "value": round(float(r['合計']) / 1000, 2)})
+                        foreign_data.append({"time": time_str, "value": round(float(r['外資']) / 1000, 2)})
+                        trust_data.append({"time": time_val, "value": round(float(r['投信']) / 1000, 2)})
+                        # 修正上方寫錯的 time_val，統一為 time_str
+                        foreign_data[-1]["time"] = time_str
+                        trust_data[-1]["time"] = time_str
+
                     chip_info = pivot_df.tail(10).to_string() 
                     last_10 = pivot_df.tail(10).iloc[::-1]
                     for _, r in last_10.iterrows():
-                        chip_table_data.append({"date": str(r['date'])[5:], "foreign": round(float(r.get('外資',0))/1000,1), "trust": round(float(r.get('投信',0))/1000,1), "dealer": round(float(r.get('自營',0))/1000,1), "total": round(float(r.get('合計',0))/1000,1)})
-            except: pass
+                        try:
+                            chip_table_data.append({"date": str(r['date'])[5:], "foreign": round(float(r.get('外資',0))/1000,1), "trust": round(float(r.get('投信',0))/1000,1), "dealer": round(float(r.get('自營',0))/1000,1), "total": round(float(r.get('合計',0))/1000,1)})
+                        except: pass
+            except Exception as e:
+                print("籌碼解析異常:", e)
 
         prompt = (
-            f"你是台股頂級量化操盤手。分析 {display_name} ({interval})。\n必須純 JSON 輸出。\n"
+            f"你是台股量化操盤手。分析 {display_name} ({interval})。\n純 JSON 輸出。\n"
             f"{{\"signal\": \"多/空/觀望\", \"pressure\": \"價格\", \"support\": \"價格\", \"stop_loss\": \"價格\", \"path_up\": \"路徑\", \"path_down\": \"路徑\", \"stars\": 1到5整數, \"advice\": [\"技術面\", \"籌碼面\", \"建議\"]}}\n\n"
             f"基本面：{fundamental_data}\n技術面：{df.tail(10).to_string()}\n籌碼面：{chip_info}"
         )
@@ -234,7 +237,9 @@ def predict():
         return jsonify({
             "status": "success", "symbol": symbol, "current_price": current_price, "interval": interval,
             "chart_data": chart_data, "macd_data": macd_data, "kd_data": kd_data, 
-            "obv_data": obv_data, "chip_data": chip_chart_data, "chip_table": chip_table_data,
+            "obv_data": obv_data, "chip_data": chip_chart_data, 
+            "foreign_data": foreign_data, "trust_data": trust_data, # 送出拆分的籌碼
+            "chip_table": chip_table_data,
             "fundamental": fundamental_data, "ai_analysis": ai_data
         })
     except Exception as e:
