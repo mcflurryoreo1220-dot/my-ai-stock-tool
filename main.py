@@ -20,7 +20,7 @@ if api_key:
 
 @app.route('/')
 def home():
-    return "AI 戰情室大腦運轉中！(搭載閃電 Flash 主引擎破除超時限制)"
+    return "AI 戰情室大腦運轉中！(搭載自動上櫃股切換與雙引擎)"
 
 @app.route('/predict', methods=['GET'])
 def predict():
@@ -39,10 +39,22 @@ def predict():
         else:
             period = "6mo"
 
+        # 1. 抓取技術面數據
         stock = yf.Ticker(symbol)
         df = stock.history(period=period, interval=interval)
+        
+        # 【核心修復】：自動備援上櫃代碼 (.TWO) 搜尋
+        if df.empty and symbol.endswith('.TW'):
+            fallback_symbol = symbol.replace('.TW', '.TWO')
+            fallback_stock = yf.Ticker(fallback_symbol)
+            fallback_df = fallback_stock.history(period=period, interval=interval)
+            if not fallback_df.empty:
+                symbol = fallback_symbol
+                stock = fallback_stock
+                df = fallback_df
+
         if df.empty:
-            return jsonify({"status": "error", "message": f"無法獲取 {symbol} 的 {interval} 歷史數據。"}), 400
+            return jsonify({"status": "error", "message": f"無法獲取 {symbol} 的數據。確認代碼或等待開盤資料更新。"}), 400
 
         df['MA5'] = df['Close'].rolling(window=5).mean()
         df['MA10'] = df['Close'].rolling(window=10).mean()
@@ -99,7 +111,7 @@ def predict():
             pe = info.get("trailingPE")
             if eps is not None: fundamental_data["eps"] = round(eps, 2)
             if pe is not None: fundamental_data["pe_ratio"] = round(pe, 2)
-        except Exception as e:
+        except Exception:
             pass
 
         pure_symbol = symbol.replace('.TW', '').replace('.TWO', '')
@@ -161,7 +173,6 @@ def predict():
             f"【基本面】：{fundamental_data}\n【技術面】：{df.tail(15).to_string()}\n【籌碼面】：{chip_info}"
         )
         
-        # 【關鍵修復】：將 Flash 模型移到首位，大幅縮短運算時間，避免 Render 超時斷線
         ai_data = None
         models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro-latest']
         
@@ -183,8 +194,7 @@ def predict():
                 else:
                     ai_data = json.loads(text)
                     break
-            except Exception as e:
-                print(f"[{model_name}] 引擎解析失敗:", e)
+            except Exception:
                 continue
                 
         if not ai_data:
@@ -197,7 +207,6 @@ def predict():
             "fundamental": fundamental_data, "ai_analysis": ai_data
         })
     except Exception as e:
-        print("系統嚴重錯誤:", traceback.format_exc())
         return jsonify({"status": "error", "message": f"內部伺服器錯誤: {str(e)}"}), 500
 
 if __name__ == "__main__":
