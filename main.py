@@ -27,7 +27,7 @@ RADAR_WATCHLIST = [
 
 @app.route('/')
 def home():
-    return "AI 戰情室大腦運轉中！(搭載籌碼X光透視引擎)"
+    return "AI 戰情室大腦運轉中！(字串切割修復與 AI 強化版)"
 
 def check_radar_symbol(symbol):
     try:
@@ -73,9 +73,10 @@ def check_radar_symbol(symbol):
         trend_up = (curr['Close'] > curr['MA20']) and (curr['OSC'] > 0)
 
         if kd_cross and trend_up:
-            name = stock.info.get('shortName', symbol.replace('.TW','').replace('.TWO',''))
+            pure_sym = symbol.split('.')[0]
+            name = stock.info.get('shortName', pure_sym)
             return {
-                "symbol": symbol.replace('.TW','').replace('.TWO',''),
+                "symbol": pure_sym,
                 "name": name,
                 "price": round(curr['Close'], 2)
             }
@@ -118,7 +119,7 @@ def predict():
             symbol = fallback_symbol
 
         if df.empty:
-            return jsonify({"status": "error", "message": f"無法獲取 {symbol} 數據。"}), 400
+            return jsonify({"status": "error", "message": f"無法獲取 {symbol} 數據。請確認代碼是否正確。"}), 400
 
         df['MA5'] = df['Close'].rolling(window=5).mean()
         df['MA10'] = df['Close'].rolling(window=10).mean()
@@ -162,27 +163,29 @@ def predict():
             obv_data.append({"time": time_val, "value": row['OBV']})
 
         current_price = round(float(df['Close'].iloc[-1]), 2)
-        display_name = symbol
-
+        
+        # 【核心修復】：使用 split('.') 確保純數字提取，絕不產生 O 字母
+        pure_symbol = symbol.split('.')[0]
+        
+        display_name = pure_symbol
         fundamental_data = {"eps": "--", "pe_ratio": "--"}
         try:
             info = stock.info
-            display_name = info.get('shortName', symbol)
+            display_name = info.get('shortName', pure_symbol)
             eps = info.get("trailingEps")
             pe = info.get("trailingPE")
             if eps is not None: fundamental_data["eps"] = round(eps, 2)
             if pe is not None: fundamental_data["pe_ratio"] = round(pe, 2)
         except: pass
 
-        # === 【X光透視：分離籌碼陣列】 ===
-        pure_symbol = symbol.replace('.TW', '').replace('.TWO', '')
-        chip_info, chip_chart_data, chip_table_data = "非日線層級", [], []
+        chip_info, chip_chart_data, chip_table_data = "無近期資料", [], []
         foreign_data, trust_data = [], []
         
         if interval == '1d':
             try:
                 dl = DataLoader()
                 start_date = (datetime.datetime.now() - datetime.timedelta(days=45)).strftime('%Y-%m-%d')
+                # 拿純淨的 pure_symbol 去找資料庫
                 df_chips = dl.taiwan_stock_institutional_investors(stock_id=pure_symbol, start_date=start_date)
                 if not df_chips.empty:
                     df_chips['net_buy'] = df_chips['buy'] - df_chips['sell']
@@ -197,10 +200,7 @@ def predict():
                         time_str = str(r['date'])
                         chip_chart_data.append({"time": time_str, "value": round(float(r['合計']) / 1000, 2)})
                         foreign_data.append({"time": time_str, "value": round(float(r['外資']) / 1000, 2)})
-                        trust_data.append({"time": time_val, "value": round(float(r['投信']) / 1000, 2)})
-                        # 修正上方寫錯的 time_val，統一為 time_str
-                        foreign_data[-1]["time"] = time_str
-                        trust_data[-1]["time"] = time_str
+                        trust_data.append({"time": time_str, "value": round(float(r['投信']) / 1000, 2)})
 
                     chip_info = pivot_df.tail(10).to_string() 
                     last_10 = pivot_df.tail(10).iloc[::-1]
@@ -212,37 +212,51 @@ def predict():
                 print("籌碼解析異常:", e)
 
         prompt = (
-            f"你是台股量化操盤手。分析 {display_name} ({interval})。\n純 JSON 輸出。\n"
-            f"{{\"signal\": \"多/空/觀望\", \"pressure\": \"價格\", \"support\": \"價格\", \"stop_loss\": \"價格\", \"path_up\": \"路徑\", \"path_down\": \"路徑\", \"stars\": 1到5整數, \"advice\": [\"技術面\", \"籌碼面\", \"建議\"]}}\n\n"
+            f"你是專業台股量化操盤手。分析 {display_name} ({interval})。\n"
+            f"務必只輸出純 JSON 格式，不要有任何 Markdown 或額外文字。\n"
+            f"{{\n"
+            f"  \"signal\": \"偏多/偏空/觀望\",\n"
+            f"  \"pressure\": \"價格\",\n"
+            f"  \"support\": \"價格\",\n"
+            f"  \"stop_loss\": \"價格\",\n"
+            f"  \"path_up\": \"上漲路徑推演(限15字)\",\n"
+            f"  \"path_down\": \"下跌路徑推演(限15字)\",\n"
+            f"  \"stars\": 3,\n"
+            f"  \"advice\": [\"技術面分析\", \"籌碼面分析\", \"操作建議總結\"]\n"
+            f"}}\n\n"
             f"基本面：{fundamental_data}\n技術面：{df.tail(10).to_string()}\n籌碼面：{chip_info}"
         )
         
         ai_data = None
-        models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro-latest']
+        models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro']
         for model_name in models_to_try:
             try:
                 model = genai.GenerativeModel(model_name)
-                response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.1))
-                text = response.text.replace("```json\n", "").replace("```", "").strip()
-                start = text.find('{')
-                end = text.rfind('}')
-                if start != -1 and end != -1:
-                    ai_data = json.loads(text[start:end+1])
+                response = model.generate_content(prompt)
+                text = response.text
+                
+                # 最強防護：強制挖出大括號區間
+                match = re.search(r'\{[\s\S]*\}', text)
+                if match:
+                    ai_data = json.loads(match.group(0))
                     break
-            except Exception: continue
+            except Exception as e:
+                print(f"[{model_name}] 失敗:", e)
+                continue
                 
         if not ai_data:
-            ai_data = {"signal": "系統繁忙", "pressure": "--", "support": "--", "stop_loss": "--", "path_up": "--", "path_down": "--", "stars": 0, "advice": ["圖表已載入", "請重試"]}
+            ai_data = {"signal": "AI保護機制啟動", "pressure": "--", "support": "--", "stop_loss": "--", "path_up": "--", "path_down": "--", "stars": 0, "advice": ["AI 連線逾時", "圖表與量化數據已為您更新", "請稍後重新點擊分析"]}
 
         return jsonify({
             "status": "success", "symbol": symbol, "current_price": current_price, "interval": interval,
             "chart_data": chart_data, "macd_data": macd_data, "kd_data": kd_data, 
             "obv_data": obv_data, "chip_data": chip_chart_data, 
-            "foreign_data": foreign_data, "trust_data": trust_data, # 送出拆分的籌碼
+            "foreign_data": foreign_data, "trust_data": trust_data,
             "chip_table": chip_table_data,
             "fundamental": fundamental_data, "ai_analysis": ai_data
         })
     except Exception as e:
+        print(traceback.format_exc())
         return jsonify({"status": "error", "message": f"內部伺服器錯誤: {str(e)}"}), 500
 
 if __name__ == "__main__":
