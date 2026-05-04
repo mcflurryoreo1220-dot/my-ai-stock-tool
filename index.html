@@ -69,7 +69,6 @@
         .chip-table td { padding: 8px; border-bottom: 1px solid #0f172a; }
         .txt-red { color: var(--red); } .txt-green { color: var(--green); }
 
-        /* 技術指標總覽表格 */
         .tech-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 15px; }
         .tech-table th { background: #020617; padding: 6px; color: var(--text-muted); border-bottom: 1px solid var(--border-color); text-align: left; }
         .tech-table td { padding: 8px 6px; border-bottom: 1px solid #0f172a; }
@@ -77,7 +76,6 @@
         .status-down { color: var(--green); font-weight: bold; }
         .status-flat { color: var(--orange); font-weight: bold; }
 
-        /* 勝率儀表板 (Gauge) */
         .gauge-container { display: flex; flex-direction: column; align-items: center; justify-content: center; background: #020617; border: 1px solid var(--border-color); border-radius: 6px; padding: 15px; position: relative; overflow: hidden; }
         .gauge-arc { width: 160px; height: 80px; border-radius: 160px 160px 0 0; background: conic-gradient(from 270deg, var(--red) 0% 50%, var(--green) 50% 100%); position: relative; }
         .gauge-arc::after { content: ''; position: absolute; bottom: 0; left: 20px; width: 120px; height: 60px; background: #020617; border-radius: 120px 120px 0 0; }
@@ -85,7 +83,6 @@
         .gauge-text { position: absolute; bottom: 10px; font-size: 24px; font-weight: bold; color: white; z-index: 10; }
         .gauge-label { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
 
-        /* 甜甜圈圖 (Doughnut) */
         .donut-container { display: flex; align-items: center; justify-content: space-around; background: #020617; border: 1px solid var(--border-color); border-radius: 6px; padding: 15px; }
         .donut-chart { width: 100px; height: 100px; border-radius: 50%; background: conic-gradient(var(--red) 0% 33%, var(--green) 33% 66%, var(--orange) 66% 100%); position: relative; display: flex; justify-content: center; align-items: center; }
         .donut-inner { width: 65px; height: 65px; border-radius: 50%; background: #020617; position: absolute; display: flex; justify-content: center; align-items: center; font-size: 12px; font-weight: bold; color: var(--text-muted); text-align: center; line-height: 1.2;}
@@ -96,7 +93,6 @@
         #sysMessage { margin-bottom: 15px; font-size: 14px; color: var(--cyan); }
         .advice-list li { margin-bottom: 8px; }
 
-        /* Modal & Portfolio ... (保留上版相同樣式) */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: none; justify-content: center; align-items: center; }
         .modal-content { background: var(--panel-bg); border: 1px solid var(--blue); border-radius: 8px; width: 400px; padding: 20px; box-shadow: 0 0 20px rgba(41, 98, 255, 0.3); }
         .modal-header { font-size: 18px; font-weight: bold; color: white; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
@@ -146,7 +142,6 @@
     <div id="sysMessage"></div>
     
     <div class="main-grid" id="mainGrid">
-        <!-- 左欄 (圖表區) -->
         <div class="column">
             <div class="chart-wrapper">
                 <div class="chart-box">
@@ -168,7 +163,6 @@
                 </div>
             </div>
             
-            <!-- 全新：技術指標狀態總覽 -->
             <div class="info-card">
                 <div class="card-header">📋 技術指標總覽</div>
                 <table class="tech-table">
@@ -183,7 +177,6 @@
             </div>
         </div>
         
-        <!-- 中欄 (劇本與籌碼表) -->
         <div class="column">
             <div class="info-card">
                 <div class="card-header">📊 隔日操作劇本推演</div>
@@ -200,7 +193,6 @@
                 </div>
             </div>
 
-            <!-- 全新：勝率半圓形儀表板 -->
             <div class="info-card">
                 <div class="card-header">⏱️ 短線量化勝率 (嚴選濾網)</div>
                 <div class="gauge-container">
@@ -215,23 +207,9 @@
                 <div class="card-header">🏦 三大法人近 10 日動向 (張)</div>
                 <table class="chip-table"><thead><tr><th>日期</th><th>外資</th><th>投信</th><th>自營</th><th>合計</th></tr></thead><tbody id="chipTableBody"></tbody></table>
             </div>
-
-            <div class="info-card" style="border-color: var(--green);">
-                <div class="card-header" style="color: var(--green);">🛡️ 資金安全控管 (單筆)</div>
-                <div style="display:flex; gap:10px; margin-bottom: 10px;">
-                    <div style="flex:1;"><div style="font-size:11px; color:var(--text-muted); margin-bottom:4px;">停損參考價</div><input type="number" id="risk-stop-loss" value="0" step="0.5" style="width:100%; box-sizing:border-box; padding:6px; text-align:center;" oninput="updateRiskCalc()"></div>
-                    <div style="flex:1;"><div style="font-size:11px; color:var(--text-muted); margin-bottom:4px;">最高可承虧損</div><input type="number" id="risk-max-loss" value="5000" step="1000" style="width:100%; box-sizing:border-box; padding:6px; text-align:center;" oninput="updateRiskCalc()"></div>
-                </div>
-                <div style="background:#020617; padding:10px; border-radius:4px; text-align:center; border: 1px solid var(--border-color);">
-                    <div style="font-size:12px; color:var(--text-muted);">安全進場上限</div>
-                    <div id="risk-result" style="font-size:22px; font-weight:bold; color:var(--green); font-family:monospace;">0 張</div>
-                </div>
-            </div>
         </div>
 
-        <!-- 右欄 (型態/產業/AI預測) -->
         <div class="column">
-            <!-- 全新：AI 漲跌機率甜甜圈圖 -->
             <div class="info-card">
                 <div class="card-header">🎯 明日漲跌機率預測 (AI)</div>
                 <div class="donut-container">
@@ -268,9 +246,16 @@
                 </div>
             </div>
             
-            <div class="info-card" style="flex: 1;">
-                <div class="card-header">📝 操盤室總結建議</div>
-                <ul id="ai-advice" class="advice-list" style="font-size:14px; color:#a5d6a7; line-height:1.6; padding-left:20px;"></ul>
+            <div class="info-card" style="border-color: var(--green);">
+                <div class="card-header" style="color: var(--green);">🛡️ 資金安全控管 (單筆)</div>
+                <div style="display:flex; gap:10px; margin-bottom: 10px;">
+                    <div style="flex:1;"><div style="font-size:11px; color:var(--text-muted); margin-bottom:4px;">停損參考價</div><input type="number" id="risk-stop-loss" value="0" step="0.5" style="width:100%; box-sizing:border-box; padding:6px; text-align:center;" oninput="updateRiskCalc()"></div>
+                    <div style="flex:1;"><div style="font-size:11px; color:var(--text-muted); margin-bottom:4px;">最高可承虧損</div><input type="number" id="risk-max-loss" value="5000" step="1000" style="width:100%; box-sizing:border-box; padding:6px; text-align:center;" oninput="updateRiskCalc()"></div>
+                </div>
+                <div style="background:#020617; padding:10px; border-radius:4px; text-align:center; border: 1px solid var(--border-color);">
+                    <div style="font-size:12px; color:var(--text-muted);">安全進場上限</div>
+                    <div id="risk-result" style="font-size:22px; font-weight:bold; color:var(--green); font-family:monospace;">0 張</div>
+                </div>
             </div>
         </div>
     </div>
@@ -326,11 +311,11 @@
             
             document.getElementById('mainGrid').style.display = "none"; document.getElementById('priceZone').style.display = "none";
             btn.disabled = true; btn.innerText = "掃描中...";
-            sysMsg.innerHTML = '<span style="color:var(--cyan);">🔄 AI 正在執行高階演算，繪製通道與計算勝率...</span>';
+            sysMsg.innerHTML = '<span style="color:var(--cyan);">🔄 AI 正在萃取劇本與產業模塊 (具備防呆除錯)...</span>';
             
             try {
                 const res = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${symbol}&interval=${interval}`);
-                if (!res.ok) throw new Error("伺服器無回應，請等待 10 秒後再點擊一次。");
+                if (!res.ok) throw new Error("伺服器無回應，機房啟動中...");
                 const data = await res.json();
                 
                 if(data.status === "success") {
@@ -367,7 +352,6 @@
                     document.getElementById('ai-pattern-t').innerText = ai.pattern_trend || '--';
                     document.getElementById('ai-industry').innerText = ai.industry_desc || '--';
                     document.getElementById('ai-related').innerText = ai.related_stocks || '--';
-                    document.getElementById('ai-advice').innerHTML = Array.isArray(ai.advice) ? ai.advice.map(t => `<li>${t}</li>`).join('') : `<li>${ai.advice}</li>`;
 
                     // 更新甜甜圈圖
                     let pup = ai.prob_up || 33; let pdown = ai.prob_down || 33; let pflat = ai.prob_flat || 34;
@@ -381,9 +365,7 @@
                     document.getElementById('risk-stop-loss').value = (!isNaN(parsedSL) && parsedSL > 0) ? parsedSL : (currentAnalysis.price * 0.95).toFixed(2);
                     updateRiskCalc();
 
-                    // 生成技術指標總覽
                     generateTechTable(data.chart_data, data.kd_data, data.macd_data);
-
                     runBacktest(data.chart_data, data.kd_data, data.macd_data);
                     renderCharts(data); updatePortfolioPrices();
                 } else { sysMsg.innerHTML = `<span style="color:var(--red);">❌ 分析出錯：${data.message}</span>`; }
@@ -391,7 +373,6 @@
             finally { btn.disabled = false; btn.innerText = "⚡ 啟動專業終端分析"; }
         }
 
-        // === 【新增：技術指標總覽表生成邏輯】 ===
         function generateTechTable(kline, kd, macd) {
             let lastK = kline[kline.length-1]; let prevK = kline[kline.length-2];
             let lastKD = kd[kd.length-1]; let prevKD = kd[kd.length-2];
@@ -421,7 +402,6 @@
             else { bbElS.className = 'status-down'; bbElS.innerHTML = '↘ 偏弱'; bbElD.innerText = '跌破中軌，向下軌靠攏'; }
         }
 
-        // === 【升級：更新半圓形勝率 Gauge】 ===
         function runBacktest(klineData, kdData, macdData) {
             let holding = false, buyPrice = 0, totalReturn = 0, wins = 0, losses = 0;
             let priceMap = {}; klineData.forEach(d => { priceMap[d.time] = d.close; });
@@ -442,8 +422,6 @@
             
             document.getElementById('gaugeText').innerText = `${wr}%`;
             document.getElementById('gaugeLabel').innerText = `交易 ${total} 次，總報酬 ${totalReturn>0?'+':''}${totalReturn.toFixed(1)}%`;
-            
-            // 旋轉指針 (-90deg 是 0%, 90deg 是 100%)
             let deg = -90 + (180 * (wr / 100));
             document.getElementById('gaugeNeedle').style.transform = `rotate(${deg}deg)`;
             if (wr >= 60) document.getElementById('gaugeText').style.color = "var(--red)";
@@ -463,11 +441,10 @@
             for (let key in charts) { if (charts[key]) { try { charts[key].remove(); } catch (e) {} } }
             charts = {}; seriesDict = {};
             const iv = data.interval;
-            const opt = { layout: { background: { color: '#0a1128' }, textColor: '#94a3b8' }, grid: { vertLines: { color: '#1e3a8a' }, horzLines: { color: '#1e3a8a' } }, crosshair: { mode: LightweightCharts.CrosshairMode.Normal }, timeScale: { visible: false, timeVisible: iv !== '1d' } };
+            const opt = { layout: { background: '#0a1128', textColor: '#94a3b8' }, grid: { vertLines: { color: '#1e3a8a' }, horzLines: { color: '#1e3a8a' } }, crosshair: { mode: LightweightCharts.CrosshairMode.Normal }, timeScale: { visible: false, timeVisible: iv !== '1d' } };
 
             charts.main = LightweightCharts.createChart(document.getElementById('mainChart'), { ...opt, height: 420 });
             
-            // 【新增】：布林通道渲染 (先畫通道背景再畫K線)
             seriesDict.bbUpper = charts.main.addLineSeries({ color: 'rgba(255,255,255,0.3)', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false });
             seriesDict.bbLower = charts.main.addLineSeries({ color: 'rgba(255,255,255,0.3)', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false });
             if (data.chart_data[0].bb_upper) {
@@ -550,7 +527,6 @@
             charts.main.timeScale().fitContent();
         }
 
-        // 模擬倉邏輯
         function buyStock() { 
             if(!currentAnalysis.symbol) return; 
             let lotsStr = prompt(`欲買進 ${currentAnalysis.symbol}，請輸入張數：`, "1");
