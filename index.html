@@ -1,572 +1,315 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 股票戰情室 - 產業板塊熱力版</title>
-    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
-    <style>
-        :root { 
-            --bg-dark: #020617; --panel-bg: #0a1128; --border-color: #1e3a8a; 
-            --text-main: #e2e8f0; --text-muted: #94a3b8; 
-            --blue: #3b82f6; --cyan: #06b6d4; --red: #ef4444; --green: #10b981; --orange: #f59e0b; 
-            --ma5: #fde047; --ma20: #f43f5e; --ma60: #06b6d4; --foreign: #fde047; --trust: #f43f5e;
-        }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-dark); color: var(--text-main); margin: 0; padding: 8px; height: 100vh; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; }
-        ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: var(--bg-dark); } ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+import os
+import json
+import datetime
+import traceback
+import re
+import concurrent.futures
+from flask import Flask, request, jsonify
+from flask_cors import CORS 
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import google.generativeai as genai
+from FinMind.data import DataLoader
 
-        .top-bar { flex: 0 0 45px; display: flex; justify-content: space-between; align-items: center; background: var(--panel-bg); padding: 0 15px; border-radius: 4px; border: 1px solid var(--border-color); margin-bottom: 8px; }
-        .search-group { display: flex; gap: 8px; align-items: center; }
-        input[type="text"], input[type="number"], select { padding: 6px 10px; background: #020617; border: 1px solid var(--border-color); color: white; border-radius: 4px; outline: none; font-weight: bold; font-size: 13px; }
-        button { padding: 6px 15px; border: none; border-radius: 4px; font-weight: bold; font-size: 13px; cursor: pointer; color: white; transition: 0.2s; }
-        .btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); border: 1px solid #3b82f6; } .btn-primary:hover { background: #1e40af; }
-        .btn-radar { background: linear-gradient(135deg, #7c3aed, #5b21b6); border: 1px solid #8b5cf6; } .btn-radar:hover { background: #4c1d95; }
-        .btn-sector { background: linear-gradient(135deg, #059669, #047857); border: 1px solid #10b981; } .btn-sector:hover { background: #065f46; }
-        button:disabled { background: var(--border-color); color: var(--text-muted); border: none; cursor: not-allowed; }
+app = Flask(__name__)
+CORS(app) 
+
+api_key = os.environ.get("GOOGLE_API_KEY")
+if api_key:
+    genai.configure(api_key=api_key)
+
+# 內建翻譯字典：強制將 yfinance 的英文轉回中文
+STOCK_DICT = {
+    "2382": "廣達", "3231": "緯創", "2376": "技嘉", "3324": "雙鴻", "3017": "奇鋐",
+    "3661": "世芯-KY", "3131": "弘塑", "6187": "萬潤", "6683": "雍智科技", "3583": "辛耘",
+    "3163": "波若威", "3363": "上詮", "4979": "華星光", "6442": "光聖", "4908": "前鼎",
+    "2504": "國產", "2515": "中工", "2520": "冠德", "1436": "華友聯", "2501": "國建",
+    "1503": "士電", "1504": "東元", "1513": "中興電", "1514": "亞力", "1519": "華城",
+    "2330": "台積電", "2317": "鴻海", "2454": "聯發科", "2301": "光寶科"
+}
+
+SECTORS = {
+    "🔥 AI 伺服器 & 散熱": ["2382.TW", "3231.TW", "2376.TW", "3324.TW", "3017.TW"],
+    "🚀 CoWoS 先進封裝": ["3661.TW", "3131.TW", "6187.TW", "6683.TW", "3583.TW"],
+    "⚡ CPO 矽光子通訊": ["3163.TW", "3363.TW", "4979.TW", "6442.TW", "4908.TW"],
+    "🏗️ 營造建材 (內需)": ["2504.TW", "2515.TW", "2520.TW", "1436.TW", "2501.TW"],
+    "🔋 重電與綠能": ["1503.TW", "1504.TW", "1513.TW", "1514.TW", "1519.TW"]
+}
+
+RADAR_WATCHLIST = [s for group in SECTORS.values() for s in group] + ['2330.TW', '2317.TW']
+
+@app.route('/')
+def home():
+    return "AI 戰情室大腦運轉中！(搭載中文翻譯與本地備援大腦)"
+
+def fetch_stock_basic(symbol):
+    try:
+        stock = yf.Ticker(symbol)
+        df = stock.history(period="5d", interval="1d")
+        if df.empty and symbol.endswith('.TW'):
+            symbol = symbol.replace('.TW', '.TWO')
+            stock = yf.Ticker(symbol)
+            df = stock.history(period="5d", interval="1d")
         
-        .price-zone { display: none; align-items: center; gap: 12px; }
-        .current-price { font-size: 26px; font-weight: bold; color: var(--red); text-shadow: 0 0 8px rgba(239,68,68,0.4); margin-bottom: 2px;}
-        
-        .main-grid { flex: 1; display: grid; grid-template-columns: 14fr 9fr 12fr; gap: 8px; overflow: hidden; display: none; }
-        .column { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding-right: 2px; }
-        
-        .chart-wrapper { background: var(--panel-bg); padding: 4px; border-radius: 4px; border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 2px; }
-        .chart-box { position: relative; width: 100%; border-bottom: 1px solid #172554; }
-        .chart-box:last-child { border-bottom: none; }
-        .chart-title { position: absolute; z-index: 2; padding: 2px 6px; font-size: 10px; background: rgba(2,6,23,0.8); color: var(--cyan); border: 1px solid #1e3a8a; top: 4px; left: 4px; display: flex; gap: 8px; align-items: center; border-radius: 2px; }
-        .legend-ma5 { color: var(--ma5); } .legend-ma20 { color: var(--ma20); } .legend-ma60 { color: var(--ma60); }
-        .legend-bb { color: var(--text-main); }
-        .legend-for { color: var(--foreign); } .legend-tru { color: var(--trust); }
-        .chart-legend { position: absolute; z-index: 10; font-size: 11px; color: #fff; background: rgba(2,6,23,0.9); border-radius: 4px; top: 25px; left: 4px; padding: 4px; display: none; border: 1px solid var(--cyan); }
-        
-        #mainChart { height: 330px; } .sub-chart { height: 95px; } #chipChart { height: 110px; }
-        
-        .info-card { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; }
-        .card-header { font-size: 12px; font-weight: bold; color: var(--cyan); border-bottom: 1px solid var(--border-color); padding-bottom: 4px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;}
-        
-        .scenario-grid { display: flex; flex-direction: column; gap: 5px; }
-        .scenario-box { background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 6px 8px; display: flex; justify-content: space-between; align-items: center; }
-        .scenario-box .lbl { font-size: 11px; font-weight: bold; }
-        .scenario-box .act { font-size: 11px; color: var(--text-main); text-align: right; line-height: 1.2;}
-        .s-up .lbl { color: var(--red); } .s-flat .lbl { color: var(--orange); } .s-down .lbl { color: var(--green); }
-
-        .tech-table, .chip-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: center; }
-        .tech-table th, .chip-table th { background: #020617; padding: 4px; color: var(--text-muted); border-bottom: 1px solid var(--border-color); font-weight: normal; }
-        .tech-table td, .chip-table td { padding: 5px 4px; border-bottom: 1px solid #0f172a; }
-        .tech-table td:first-child { text-align: left; color: var(--text-muted); }
-        .tech-table td:last-child { text-align: left; }
-        .status-up { color: var(--red); font-weight: bold; } .status-down { color: var(--green); font-weight: bold; } .status-flat { color: var(--orange); font-weight: bold; }
-
-        .ai-quant-row { display: flex; gap: 8px; }
-        .ai-quant-box { flex: 1; background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
-        
-        /* 【修復】: 調整 Gauge 高度避免重疊 */
-        .gauge-arc { width: 100px; height: 50px; border-radius: 100px 100px 0 0; background: conic-gradient(from 270deg, var(--red) 0% 50%, var(--green) 50% 100%); position: relative; margin-bottom: 10px; }
-        .gauge-arc::after { content: ''; position: absolute; bottom: 0; left: 15px; width: 70px; height: 35px; background: #020617; border-radius: 70px 70px 0 0; }
-        .gauge-needle { position: absolute; bottom: 10px; left: 50%; width: 3px; height: 45px; background: white; transform-origin: bottom center; transform: rotate(-90deg); transition: transform 1s ease-out; border-radius: 2px; }
-        .gauge-text { position: absolute; bottom: -8px; font-size: 16px; font-weight: bold; color: white; z-index: 10; }
-        .gauge-label { font-size: 10px; color: var(--text-muted); margin-top: 8px; text-align: center; }
-
-        .donut-wrap { display: flex; align-items: center; gap: 10px; width: 100%; justify-content: center;}
-        .donut-chart { width: 60px; height: 60px; border-radius: 50%; background: conic-gradient(var(--red) 0% 33%, var(--green) 33% 66%, var(--orange) 66% 100%); position: relative; display: flex; justify-content: center; align-items: center; }
-        .donut-inner { width: 38px; height: 38px; border-radius: 50%; background: #020617; position: absolute; display: flex; justify-content: center; align-items: center; font-size: 9px; font-weight: bold; color: var(--text-muted); }
-        .donut-legend { display: flex; flex-direction: column; gap: 4px; font-size: 10px; }
-        .d-leg-item { display: flex; align-items: center; gap: 4px; }
-        .d-dot { width: 8px; height: 8px; border-radius: 2px; }
-
-        .pattern-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
-        .pattern-item { background: #020617; border-left: 2px solid var(--cyan); padding: 4px 8px; border-radius: 0 4px 4px 0; }
-        .pattern-lbl { font-size: 10px; color: var(--text-muted); }
-        .pattern-val { font-size: 12px; font-weight: bold; color: white; margin-top:2px; }
-        .industry-box { background: #020617; border: 1px dashed var(--blue); padding: 6px; border-radius: 4px; }
-        .industry-link { color: var(--cyan); font-size: 11px; margin-top: 4px; font-weight: bold; }
-
-        .f-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-        .f-item { background: #020617; padding: 6px; border-radius: 4px; text-align: center; border: 1px solid #1e293b; }
-        .f-label { font-size: 10px; color: var(--text-muted); margin-bottom: 2px; }
-        .f-val { font-size: 14px; font-weight: bold; color: white; }
-
-        .slider-row { margin-bottom: 8px; }
-        .slider-row div { display: flex; justify-content: space-between; margin-bottom: 2px; font-size: 11px; }
-        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; margin: 4px 0; }
-        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 12px; width: 12px; border-radius: 50%; background: var(--cyan); cursor: pointer; margin-top: -4px; }
-        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; background: var(--border-color); border-radius: 2px; }
-        .result-box { background:#020617; padding:8px; border-radius:4px; text-align:center; border: 1px solid var(--border-color); }
-        
-        .pf-dashboard { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 6px; }
-        .pf-box { background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 6px; text-align: center; }
-        .pf-box .lbl { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
-        .pf-box .val { font-size: 14px; font-weight: bold; color: white; font-family: monospace; }
-        .pf-table-wrapper { flex: 1; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 4px; background: #020617; }
-        .pf-table th { position: sticky; top: 0; background: var(--panel-bg); font-size: 10px; z-index: 1;}
-        .pf-table td { font-size: 11px; padding: 4px; }
-
-        #sysMessage { font-size: 12px; color: var(--cyan); position: absolute; top: 15px; left: 50%; transform: translateX(-50%); font-weight: bold;}
-        
-        /* Modal 通用 */
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: none; justify-content: center; align-items: center; }
-        .modal-content { background: var(--panel-bg); border: 1px solid var(--blue); border-radius: 8px; width: 450px; padding: 15px; max-height: 80vh; display:flex; flex-direction:column; }
-        .modal-header { font-size: 16px; font-weight: bold; color: white; margin-bottom: 10px; display: flex; justify-content: space-between; }
-        
-        /* 產業熱力圖專用 */
-        .sector-list { overflow-y: auto; flex:1; }
-        .sector-group { margin-bottom: 15px; background: #020617; border: 1px solid #1e293b; border-radius: 6px; padding: 10px; }
-        .sector-title { font-size: 14px; font-weight: bold; color: var(--cyan); margin-bottom: 8px; border-bottom: 1px dashed #1e293b; padding-bottom: 4px;}
-        .sector-item { display: flex; justify-content: space-between; padding: 6px; border-bottom: 1px solid #0f172a; cursor: pointer; transition: 0.2s;}
-        .sector-item:hover { background: #0f172a; }
-        .sector-item:last-child { border-bottom: none; }
-        .txt-red { color: var(--red); } .txt-green { color: var(--green); }
-    </style>
-</head>
-<body>
-    <!-- 選股雷達 Modal -->
-    <div class="modal-overlay" id="radarModal">
-        <div class="modal-content" style="width: 350px;">
-            <div class="modal-header"><span>📡 選股雷達掃描</span><button style="background:none;border:none;color:gray;cursor:pointer;" onclick="closeModal('radarModal')">×</button></div>
-            <ul class="radar-list" id="radarList" style="list-style:none; padding:0; margin:0;"><div style="text-align:center;color:gray;padding:10px;">掃描中...</div></ul>
-        </div>
-    </div>
-
-    <!-- 產業熱力圖 Modal -->
-    <div class="modal-overlay" id="sectorModal">
-        <div class="modal-content" style="width: 500px;">
-            <div class="modal-header"><span>🗂️ 產業板塊熱力圖</span><button style="background:none;border:none;color:gray;cursor:pointer;" onclick="closeModal('sectorModal')">×</button></div>
-            <div class="sector-list" id="sectorList"><div style="text-align:center;color:var(--cyan);padding:20px;">載入板塊資金動向中...</div></div>
-        </div>
-    </div>
-
-    <div class="top-bar">
-        <div class="search-group">
-            <button class="btn-radar" onclick="startRadar()">📡 雷達</button>
-            <button class="btn-sector" onclick="startSectors()">🗂️ 產業板塊</button>
-            <div style="width: 1px; height: 20px; background: var(--border-color); margin: 0 5px;"></div>
-            <input type="text" id="symbol" value="3661" placeholder="代碼" style="width: 80px;">
-            <select id="intervalSelector"><option value="1d" selected>日K</option><option value="60m">60分</option><option value="15m">15分</option><option value="5m">5分</option><option value="1m">1分</option></select>
-            <button class="btn-primary" id="analyzeBtn" onclick="analyze()">⚡ 啟動終端</button>
-        </div>
-        <div id="sysMessage"></div>
-        <div class="price-zone" id="priceZone">
-            <div style="display:flex; align-items: baseline; gap:8px;">
-                <span id="stockTitle" style="font-weight:bold; font-size:20px; letter-spacing:1px; color:white;">--</span>
-                <span id="ai-signal" style="font-size:14px; font-weight:bold; padding:2px 6px; border-radius:4px; background:rgba(255,255,255,0.1);">--</span>
-            </div>
-            <div class="current-price" id="currentPriceDisplay">0.00</div>
-            <button style="background:var(--orange); font-size:12px; padding:6px 10px; border-radius:4px; border:none; cursor:pointer;" onclick="buyStock()">+ 模擬倉</button>
-        </div>
-    </div>
-    
-    <div class="main-grid" id="mainGrid">
-        <div class="column">
-            <div class="chart-wrapper">
-                <div class="chart-box">
-                    <div class="chart-title"><span id="mainChartTitle">技術面分析</span><span class="legend-ma5" id="l-ma5">M5:--</span><span class="legend-ma20" id="l-ma20">M20:--</span><span class="legend-ma60" id="l-ma60">M60:--</span><span class="legend-bb" id="l-bb">上軌:--</span></div>
-                    <div class="chart-legend" id="chartLegend"></div><div id="mainChart"></div>
-                </div>
-                <div class="chart-box"><div class="chart-title">MACD</div><div id="macdChart" class="sub-chart"></div></div>
-                <div class="chart-box"><div class="chart-title">KD (9,3,3)</div><div id="kdChart" class="sub-chart"></div></div>
-                <div class="chart-box" id="chipBox" style="border:none;">
-                    <div class="chart-title">三大法人 <span class="legend-for" id="l-for">外:--</span><span class="legend-tru" id="l-tru">投:--</span></div>
-                    <div id="chipChart" class="sub-chart"></div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="column">
-            <div class="info-card" style="padding: 6px;">
-                <div class="card-header" style="margin-bottom: 4px;">📋 指標狀態總覽</div>
-                <table class="tech-table">
-                    <tbody id="techTableBody">
-                        <tr><td>KD</td><td id="t-kd-s">--</td><td id="t-kd-d">--</td></tr>
-                        <tr><td>MACD</td><td id="t-macd-s">--</td><td id="t-macd-d">--</td></tr>
-                        <tr><td>均線</td><td id="t-ma-s">--</td><td id="t-ma-d">--</td></tr>
-                        <tr><td>布林</td><td id="t-bb-s">--</td><td id="t-bb-d">--</td></tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <div class="info-card" style="padding: 6px;">
-                <div class="card-header" style="margin-bottom: 4px;">📊 劇本推演</div>
-                <div class="scenario-grid">
-                    <div class="scenario-box s-up"><div class="lbl">① 突破</div><div class="act"><span id="s-up-p" style="font-weight:bold;">--</span><br><span id="s-up-a" style="font-size:10px;">--</span></div></div>
-                    <div class="scenario-box s-flat"><div class="lbl">② 震盪</div><div class="act"><span id="s-flat-p" style="font-weight:bold;">--</span><br><span id="s-flat-a" style="font-size:10px;">--</span></div></div>
-                    <div class="scenario-box s-down"><div class="lbl">③ 跌破</div><div class="act"><span id="s-down-p" style="font-weight:bold;">--</span><br><span id="s-down-a" style="font-size:10px;">--</span></div></div>
-                </div>
-            </div>
-
-            <div class="info-card" id="chipTableCard" style="padding: 6px;">
-                <div class="card-header" style="margin-bottom: 4px;">🏦 法人近 10 日(張)</div>
-                <table class="chip-table"><thead><tr><th>日期</th><th>外</th><th>投</th><th>自</th><th>計</th></tr></thead><tbody id="chipTableBody"></tbody></table>
-            </div>
-
-            <div class="info-card" style="border-color: var(--blue); padding: 8px;">
-                <div class="card-header" style="color: var(--blue); margin-bottom: 4px;">📈 估值計算機</div>
-                <div class="slider-row"><div><span>預估 EPS</span><span id="calc-eps-val" style="color:#fff">0.00</span></div><input type="range" id="slider-eps" min="0" max="150" step="0.5" value="0" oninput="updateCalc()"></div>
-                <div class="slider-row"><div><span>目標 PE</span><span id="calc-pe-val" style="color:#fff">15.0</span></div><input type="range" id="slider-pe" min="5" max="80" step="1" value="15" oninput="updateCalc()"></div>
-                <div class="result-box"><div id="calc-result" style="font-size:18px; font-weight:bold; color:var(--cyan); font-family:monospace;">--</div><div id="calc-status" style="font-size:10px; margin-top:2px;">--</div></div>
-            </div>
-        </div>
-
-        <div class="column">
-            <div class="ai-quant-row">
-                <div class="ai-quant-box" style="border-color: var(--red);">
-                    <div style="font-size:11px; color:var(--red); font-weight:bold; margin-bottom:6px; position:absolute; top:4px; left:6px;">嚴選勝率</div>
-                    <div class="gauge-container" style="padding:0; border:none; margin-top:15px;">
-                        <div class="gauge-arc" id="gaugeArc"></div><div class="gauge-needle" id="gaugeNeedle"></div>
-                        <div class="gauge-text" id="gaugeText">0%</div><div class="gauge-label" id="gaugeLabel">等待計算</div>
-                    </div>
-                </div>
-                <div class="ai-quant-box" style="border-color: var(--cyan);">
-                    <div style="font-size:11px; color:var(--cyan); font-weight:bold; margin-bottom:6px; position:absolute; top:4px; left:6px;">明日AI機率</div>
-                    <div class="donut-wrap" style="margin-top:15px;">
-                        <div class="donut-chart" id="donutChart"><div class="donut-inner">AI</div></div>
-                        <div class="donut-legend">
-                            <div class="d-leg-item"><div class="d-dot" style="background:var(--red);"></div>漲 <span id="p-up" style="color:white;">--%</span></div>
-                            <div class="d-leg-item"><div class="d-dot" style="background:var(--orange);"></div>盤 <span id="p-flat" style="color:white;">--%</span></div>
-                            <div class="d-leg-item"><div class="d-dot" style="background:var(--green);"></div>跌 <span id="p-down" style="color:white;">--%</span></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="info-card" style="padding: 8px;">
-                <div class="f-grid" style="margin-bottom: 6px;">
-                    <div class="f-item"><div class="f-label">型態與均線</div><div class="f-val" id="ai-pattern-k" style="font-size:12px;">--</div></div>
-                    <div class="f-item"><div class="f-label">支撐防守區</div><div class="f-val" id="ai-support" style="color:var(--red); font-size:14px;">--</div></div>
-                </div>
-                <div class="industry-box">
-                    <div style="font-size:10px; color:var(--text-muted); display:flex; justify-content:space-between;"><span>產業鏈: <b id="ai-industry" style="color:white;">--</b></span><span>壓力: <b id="ai-pressure" style="color:var(--green);">--</b></span></div>
-                    <div class="industry-link" id="ai-related">--</div>
-                </div>
-            </div>
+        if len(df) >= 2:
+            curr = df.iloc[-1]['Close']
+            prev = df.iloc[-2]['Close']
+            change_pct = ((curr - prev) / prev) * 100
             
-            <div class="info-card" style="border-color: var(--green); padding: 8px;">
-                <div style="display:flex; gap:8px; margin-bottom: 6px;">
-                    <div style="flex:1;"><div style="font-size:10px; color:var(--text-muted); margin-bottom:2px;">停損參考價</div><input type="number" id="risk-stop-loss" value="0" step="0.5" style="width:100%; box-sizing:border-box; padding:4px; font-size:12px; text-align:center;" oninput="updateRiskCalc()"></div>
-                    <div style="flex:1;"><div style="font-size:10px; color:var(--text-muted); margin-bottom:2px;">可承虧損</div><input type="number" id="risk-max-loss" value="5000" step="1000" style="width:100%; box-sizing:border-box; padding:4px; font-size:12px; text-align:center;" oninput="updateRiskCalc()"></div>
-                    <div class="result-box" style="flex:1; display:flex; flex-direction:column; justify-content:center;"><div style="font-size:10px; color:var(--text-muted);">可買張數</div><div id="risk-result" style="font-size:14px; font-weight:bold; color:var(--green);">0 張</div></div>
-                </div>
-            </div>
+            pure_sym = symbol.split('.')[0]
+            # 強制使用中文翻譯字典
+            name = STOCK_DICT.get(pure_sym, stock.info.get('shortName', pure_sym))
+            
+            return {"symbol": pure_sym, "name": name, "price": round(curr, 2), "change": round(change_pct, 2)}
+    except: pass
+    return None
 
-            <div class="info-card" style="flex: 1; padding: 6px; display:flex; flex-direction:column; overflow:hidden;">
-                <div class="card-header" style="margin-bottom: 4px;">🏦 模擬倉總動能</div>
-                <div class="pf-dashboard">
-                    <div class="pf-box"><div class="lbl">本金</div><div class="val" id="pf-cost" style="font-size:14px;">0</div></div>
-                    <div class="pf-box"><div class="lbl">市值</div><div class="val" id="pf-value" style="font-size:14px;">0</div></div>
-                    <div class="pf-box"><div class="lbl">損益</div><div class="val" id="pf-pnl-amt" style="font-size:14px;">0</div></div>
-                    <div class="pf-box" style="border-color:var(--cyan);"><div class="lbl">報酬</div><div class="val" id="pf-pnl-pct" style="color:var(--cyan); font-size:14px;">0%</div></div>
-                </div>
-                <div class="pf-table-wrapper">
-                    <table class="chip-table pf-table" style="width:100%;">
-                        <thead><tr><th>標的</th><th>張數</th><th>成本</th><th>現價</th><th>損益</th><th>操作</th></tr></thead>
-                        <tbody id="portfolioBody"></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
+@app.route('/sectors', methods=['GET'])
+def get_sectors():
+    sector_results = {}
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
+            for sector_name, symbols in SECTORS.items():
+                results = list(executor.map(fetch_stock_basic, symbols))
+                valid_results = [r for r in results if r]
+                valid_results.sort(key=lambda x: x['change'], reverse=True)
+                sector_results[sector_name] = valid_results
+        return jsonify({"status": "success", "data": sector_results})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-    <script>
-        let charts = {}; let seriesDict = {}; let currentAnalysis = { symbol: '', price: 0 };
-        let portfolio = JSON.parse(localStorage.getItem('myPortfolio_v2')) || [];
-        renderPortfolio();
+def check_radar_symbol(symbol):
+    try:
+        stock = yf.Ticker(symbol)
+        df = stock.history(period="1mo", interval="1d")
+        if df.empty and symbol.endswith('.TW'):
+            symbol = symbol.replace('.TW', '.TWO')
+            stock = yf.Ticker(symbol)
+            df = stock.history(period="1mo", interval="1d")
+        if df.empty or len(df) < 26: return None
 
-        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+        df['MA20'] = df['Close'].rolling(window=20).mean()
+        df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
+        df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
+        df['MACD_Signal'] = (df['EMA12'] - df['EMA26']).ewm(span=9, adjust=False).mean()
+        df['OSC'] = (df['EMA12'] - df['EMA26']) - df['MACD_Signal']
+        df['9_high'] = df['High'].rolling(9).max()
+        df['9_low'] = df['Low'].rolling(9).min()
+        df['RSV'] = ((df['Close'] - df['9_low']) / (df['9_high'] - df['9_low']) * 100).fillna(50)
         
-        async function startRadar() {
-            document.getElementById('radarModal').style.display = 'flex';
-            const listEl = document.getElementById('radarList');
-            listEl.innerHTML = '<div style="text-align:center;color:var(--cyan);padding:10px;">🔄 雷達掃描中...</div>';
-            try {
-                const res = await fetch('https://my-ai-stock-tool.onrender.com/radar');
-                const data = await res.json();
-                if (data.status === "success" && data.matches.length > 0) {
-                    listEl.innerHTML = data.matches.map(s => `<li style="background:#0b0e14;margin-bottom:6px;padding:10px;display:flex;justify-content:space-between;cursor:pointer;" onclick="loadFromModal('${s.symbol}')"><div><span style="color:white; font-weight:bold;">${s.name}</span> <span style="color:gray; font-size:11px;">(${s.symbol})</span></div><div style="color:var(--red); font-weight:bold;">${s.price.toFixed(2)}</div></li>`).join('');
-                } else { listEl.innerHTML = '<div style="text-align:center;color:gray;">無標的符合條件。</div>'; }
-            } catch (e) { listEl.innerHTML = '<div style="color:var(--red);text-align:center;">連線異常。</div>'; }
+        K, D = [], []
+        pk, pd_val = 50, 50
+        for rsv in df['RSV'].tolist():
+            ck = (2/3)*pk + (1/3)*rsv; cd = (2/3)*pd_val + (1/3)*ck
+            K.append(ck); D.append(cd); pk, pd_val = ck, cd
+        df['K'], df['D'] = K, D
+
+        last_2 = df.tail(2)
+        kd_cross = (last_2.iloc[0]['K'] <= last_2.iloc[0]['D']) and (last_2.iloc[1]['K'] > last_2.iloc[1]['D'])
+        trend_up = (last_2.iloc[1]['Close'] > last_2.iloc[1]['MA20']) and (last_2.iloc[1]['OSC'] > 0)
+
+        if kd_cross and trend_up:
+            pure_sym = symbol.split('.')[0]
+            name = STOCK_DICT.get(pure_sym, stock.info.get('shortName', pure_sym))
+            return {"symbol": pure_sym, "name": name, "price": round(last_2.iloc[1]['Close'], 2)}
+    except: pass
+    return None
+
+@app.route('/radar', methods=['GET'])
+def radar():
+    matched = []
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            for r in executor.map(check_radar_symbol, RADAR_WATCHLIST):
+                if r: matched.append(r)
+        return jsonify({"status": "success", "matches": matched})
+    except Exception as e: return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/predict', methods=['GET'])
+def predict():
+    symbol = request.args.get('symbol', '2330.TW')
+    interval = request.args.get('interval', '1d')
+    if interval not in ['1m', '5m', '15m', '60m', '1d']: interval = '1d'
+
+    try:
+        period = "5d" if interval in ['1m', '5m'] else ("1mo" if interval in ['15m', '60m'] else "6mo")
+        stock = yf.Ticker(symbol)
+        df = stock.history(period=period, interval=interval)
+        
+        if df.empty and symbol.endswith('.TW'):
+            fallback_symbol = symbol.replace('.TW', '.TWO')
+            stock = yf.Ticker(fallback_symbol)
+            df = stock.history(period=period, interval=interval)
+            symbol = fallback_symbol
+
+        if df.empty: return jsonify({"status": "error", "message": "查無資料，請確認代碼"}), 400
+
+        df['MA5'] = df['Close'].rolling(window=5).mean()
+        df['MA10'] = df['Close'].rolling(window=10).mean()
+        df['MA20'] = df['Close'].rolling(window=20).mean()
+        df['MA60'] = df['Close'].rolling(window=60).mean()
+        df['BB_std'] = df['Close'].rolling(window=20).std()
+        df['BB_upper'] = df['MA20'] + 2 * df['BB_std']
+        df['BB_lower'] = df['MA20'] - 2 * df['BB_std']
+        df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
+        df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
+        df['DIF'] = df['EMA12'] - df['EMA26']
+        df['MACD_Signal'] = df['DIF'].ewm(span=9, adjust=False).mean()
+        df['OSC'] = df['DIF'] - df['MACD_Signal']
+        df['9_high'] = df['High'].rolling(9).max()
+        df['9_low'] = df['Low'].rolling(9).min()
+        df['RSV'] = ((df['Close'] - df['9_low']) / (df['9_high'] - df['9_low']) * 100).fillna(50)
+        
+        K, D = [], []
+        pk, pd_val = 50, 50
+        for rsv in df['RSV'].tolist():
+            ck = (2/3)*pk + (1/3)*rsv; cd = (2/3)*pd_val + (1/3)*ck
+            K.append(ck); D.append(cd); pk, pd_val = ck, cd
+        df['K'], df['D'] = K, D
+        df['Volume_Dir'] = np.sign(df['Close'].diff()).fillna(0)
+        df['OBV'] = (df['Volume'] * df['Volume_Dir']).cumsum()
+
+        df = df.fillna(0)
+        chart_data, macd_data, kd_data, obv_data = [], [], [], []
+        for date, row in df.tail(80).iterrows():
+            tv = date.strftime('%Y-%m-%d') if interval == '1d' else int(date.timestamp())
+            chart_data.append({
+                "time": tv, "open": round(row['Open'],2), "high": round(row['High'],2), "low": round(row['Low'],2), "close": round(row['Close'],2), 
+                "ma5": row['MA5'], "ma20": row['MA20'], "ma60": row['MA60'], "bb_upper": row['BB_upper'], "bb_lower": row['BB_lower']
+            })
+            macd_data.append({"time": tv, "dif": row['DIF'], "signal": row['MACD_Signal'], "osc": row['OSC']})
+            kd_data.append({"time": tv, "k": row['K'], "d": row['D']})
+            obv_data.append({"time": tv, "value": row['OBV']})
+
+        current_price = round(float(df['Close'].iloc[-1]), 2)
+        pure_symbol = symbol.split('.')[0]
+        
+        fun_data = {"eps": "--", "pe_ratio": "--"}
+        try:
+            info = stock.info
+            display_name = STOCK_DICT.get(pure_symbol, info.get('shortName', pure_symbol))
+            eps, pe = info.get("trailingEps"), info.get("trailingPE")
+            if eps: fun_data["eps"] = round(eps, 2)
+            if pe: fun_data["pe_ratio"] = round(pe, 2)
+        except: display_name = STOCK_DICT.get(pure_symbol, pure_symbol)
+
+        chip_info, chip_chart_data, chip_table_data, foreign_data, trust_data = "無近期資料", [], [], [], []
+        if interval == '1d':
+            try:
+                dl = DataLoader()
+                df_chips = dl.taiwan_stock_institutional_investors(stock_id=pure_symbol, start_date=(datetime.datetime.now() - datetime.timedelta(days=30)).strftime('%Y-%m-%d'))
+                if not df_chips.empty:
+                    df_chips['net_buy'] = df_chips['buy'] - df_chips['sell']
+                    df_chips['name'] = df_chips['name'].replace({'外資及陸資(不含外資自營商)': '外資', '外資及陸資': '外資', '自營商(自行買賣)': '自營', '自營商(避險)': '自營', '自營商': '自營'})
+                    pv = df_chips.groupby(['date', 'name'])['net_buy'].sum().unstack(fill_value=0).reset_index()
+                    for col in ['外資', '投信', '自營']:
+                        if col not in pv.columns: pv[col] = 0
+                    pv['合計'] = pv['外資'] + pv['投信'] + pv['自營']
+                    for _, r in pv.iterrows():
+                        t_str = str(r['date'])
+                        chip_chart_data.append({"time": t_str, "value": round(r['合計']/1000, 2)})
+                        foreign_data.append({"time": t_str, "value": round(r['外資']/1000, 2)})
+                        trust_data.append({"time": t_str, "value": round(r['投信']/1000, 2)})
+                    chip_info = pv.tail(3).to_string() 
+                    for _, r in pv.tail(10).iloc[::-1].iterrows():
+                        chip_table_data.append({"date": str(r['date'])[5:], "foreign": round(r['外資']/1000,1), "trust": round(r['投信']/1000,1), "dealer": round(r['自營']/1000,1), "total": round(r['合計']/1000,1)})
+            except: pass
+
+        tech_str = df[['Close', 'MA20', 'OSC', 'K', 'D']].tail(3).to_string()
+        last_row = df.iloc[-1]
+
+        # === 【終極本地備援大腦】 ===
+        # 若 AI 當機，這套量化邏輯會確保版面絕對有精準數據
+        fallback_signal = "震盪"
+        if last_row['K'] > last_row['D'] and last_row['Close'] > last_row['MA20']: fallback_signal = "偏多"
+        elif last_row['K'] < last_row['D'] and last_row['Close'] < last_row['MA20']: fallback_signal = "偏空"
+        
+        ai_data = {
+            "signal": fallback_signal, 
+            "pressure": str(round(last_row['BB_upper'], 2)), 
+            "support": str(round(last_row['BB_lower'], 2)), 
+            "stop_loss": str(round(last_row['MA20'], 2)), 
+            "prob_up": 45 if fallback_signal == "偏多" else 25, 
+            "prob_down": 25 if fallback_signal == "偏多" else 45, 
+            "prob_flat": 30,
+            "pattern_kline": "量化計算中", "pattern_trend": "量化計算中", "industry_desc": "台股上市櫃", "related_stocks": "同族群個股",
+            "scenario_up": {"price": str(round(last_row['BB_upper'], 2)), "action": "突破上軌可偏多操作"}, 
+            "scenario_flat": {"price": str(round(last_row['Close'], 2)), "action": "區間整理，高出低進"}, 
+            "scenario_down": {"price": str(round(last_row['MA20'], 2)), "action": "跌破月線請嚴格防守"},
+            "stars": 3, "advice": ["Google AI 連線逾時，已啟動本地量化備援大腦", "此為純技術指標推演，請搭配籌碼判斷"]
         }
 
-        // === 新增：產業熱力圖邏輯 ===
-        async function startSectors() {
-            document.getElementById('sectorModal').style.display = 'flex';
-            const listEl = document.getElementById('sectorList');
-            listEl.innerHTML = '<div style="text-align:center;color:var(--cyan);padding:20px;">🔄 載入板塊資金動向中...</div>';
-            try {
-                const res = await fetch('https://my-ai-stock-tool.onrender.com/sectors');
-                const data = await res.json();
-                if (data.status === "success") {
-                    let html = '';
-                    for (const [sector, stocks] of Object.entries(data.data)) {
-                        html += `<div class="sector-group"><div class="sector-title">${sector}</div>`;
-                        stocks.forEach(s => {
-                            let color = s.change > 0 ? 'var(--red)' : (s.change < 0 ? 'var(--green)' : 'white');
-                            let sign = s.change > 0 ? '+' : '';
-                            html += `<div class="sector-item" onclick="loadFromModal('${s.symbol}')">
-                                <div><span style="color:white; font-weight:bold;">${s.name}</span> <span style="color:gray; font-size:11px;">(${s.symbol})</span></div>
-                                <div><span style="font-weight:bold; color:${color};">${s.price.toFixed(2)}</span> <span style="font-size:11px; color:${color};">(${sign}${s.change}%)</span></div>
-                            </div>`;
-                        });
-                        html += `</div>`;
-                    }
-                    listEl.innerHTML = html;
-                } else { listEl.innerHTML = '<div style="text-align:center;color:gray;">載入失敗。</div>'; }
-            } catch (e) { listEl.innerHTML = '<div style="color:var(--red);text-align:center;">連線異常。</div>'; }
-        }
+        # 嘗試呼叫 AI
+        prompt = (
+            f"你是專業操盤手。分析 {display_name} ({pure_symbol})。\n"
+            f"務必只輸出純 JSON，格式如下：\n"
+            f"{{\n"
+            f"  \"signal\": \"多/空/震盪\", \"pressure\": \"壓力價\", \"support\": \"支撐價\", \"stop_loss\": \"停損價\",\n"
+            f"  \"prob_up\": 40, \"prob_down\": 30, \"prob_flat\": 30,\n"
+            f"  \"pattern_kline\": \"K線(10字內)\", \"pattern_trend\": \"均線(10字內)\",\n"
+            f"  \"industry_desc\": \"產業(10字內)\", \"related_stocks\": \"概念股\",\n"
+            f"  \"scenario_up\": {{\"price\": \"突破價\", \"action\": \"建議\"}},\n"
+            f"  \"scenario_flat\": {{\"price\": \"震盪價\", \"action\": \"建議\"}},\n"
+            f"  \"scenario_down\": {{\"price\": \"防守價\", \"action\": \"建議\"}}\n"
+            f"}}\n"
+            f"技術面：{tech_str}\n籌碼：{chip_info}"
+        )
+        
+        try:
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.1))
+            text = response.text
+            match = re.search(r'\{[\s\S]*\}', text)
+            if match:
+                try:
+                    parsed = json.loads(match.group(0))
+                    # 覆蓋備援資料
+                    for k, v in parsed.items():
+                        if k in ai_data: ai_data[k] = v
+                except:
+                    # JSON 崩潰時的 Regex 終極暴力挖礦
+                    t = match.group(0)
+                    def ext_str(key, default): 
+                        m = re.search(f'"{key}"\s*:\s*"([^"]+)"', t)
+                        return m.group(1) if m else default
+                    def ext_int(key, default):
+                        m = re.search(f'"{key}"\s*:\s*(\d+)', t)
+                        return int(m.group(1)) if m else default
 
-        function loadFromModal(symbol) { closeModal('radarModal'); closeModal('sectorModal'); document.getElementById('symbol').value = symbol; analyze(); }
-
-        async function analyze() {
-            const symbolInput = document.getElementById('symbol').value.trim();
-            const symbol = /^\d+$/.test(symbolInput) ? symbolInput + ".TW" : symbolInput;
-            document.getElementById('symbol').value = symbol;
-            const interval = document.getElementById('intervalSelector').value;
-            const btn = document.getElementById('analyzeBtn');
-            const sysMsg = document.getElementById('sysMessage');
-            
-            document.getElementById('mainGrid').style.display = "none"; document.getElementById('priceZone').style.display = "none";
-            btn.disabled = true; btn.innerText = "掃描中...";
-            sysMsg.innerText = '🔄 AI 深度解析中 (若初次喚醒需時約50秒)...';
-            
-            try {
-                const res = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${symbol}&interval=${interval}`);
-                if (!res.ok) throw new Error("機房休眠喚醒中，請倒數 10 秒後再按一次！");
-                const data = await res.json();
-                
-                if(data.status === "success") {
-                    sysMsg.innerText = "";
-                    currentAnalysis.symbol = data.symbol; currentAnalysis.price = parseFloat(data.current_price);
-                    document.getElementById('mainGrid').style.display = "grid"; document.getElementById('priceZone').style.display = "flex";
-                    document.getElementById('stockTitle').innerText = data.symbol.split('.')[0];
-                    document.getElementById('currentPriceDisplay').innerText = currentAnalysis.price.toFixed(2);
+                    ai_data["signal"] = ext_str("signal", ai_data["signal"])
+                    ai_data["pressure"] = ext_str("pressure", ai_data["pressure"])
+                    ai_data["support"] = ext_str("support", ai_data["support"])
+                    ai_data["stop_loss"] = ext_str("stop_loss", ai_data["stop_loss"])
+                    ai_data["pattern_kline"] = ext_str("pattern_kline", "等待表態")
+                    ai_data["pattern_trend"] = ext_str("pattern_trend", "均線整理")
+                    ai_data["industry_desc"] = ext_str("industry_desc", "台股重點板塊")
+                    ai_data["related_stocks"] = ext_str("related_stocks", "--")
                     
-                    const isDaily = (data.interval === '1d');
-                    document.getElementById('chipBox').style.display = isDaily ? "block" : "none";
-                    document.getElementById('chipTableCard').style.display = isDaily ? "block" : "none";
-                    if (isDaily && data.chip_table) {
-                        document.getElementById('chipTableBody').innerHTML = data.chip_table.map(r => {
-                            const fC = r.foreign>0?'txt-red':(r.foreign<0?'txt-green':''); const tC = r.trust>0?'txt-red':(r.trust<0?'txt-green':'');
-                            return `<tr><td>${r.date}</td><td class="${fC}">${r.foreign}</td><td class="${tC}">${r.trust}</td><td>${r.dealer}</td><td style="font-weight:bold;">${r.total}</td></tr>`;
-                        }).join('');
-                    }
+                    pu = ext_int("prob_up", 33); pd_ = ext_int("prob_down", 33); pf = ext_int("prob_flat", 34)
+                    if pu > 0 or pd_ > 0 or pf > 0:
+                        ai_data["prob_up"]=pu; ai_data["prob_down"]=pd_; ai_data["prob_flat"]=pf
 
-                    const ai = data.ai_analysis;
-                    let sigEl = document.getElementById('ai-signal');
-                    sigEl.innerText = ai.signal || '--';
-                    if(ai.signal) sigEl.style.color = (ai.signal.includes('多')||ai.signal.includes('強')) ? 'var(--red)' : ((ai.signal.includes('空')||ai.signal.includes('弱')) ? 'var(--green)' : 'var(--orange)');
-                    
-                    document.getElementById('ai-pressure').innerText = ai.pressure || '--'; document.getElementById('ai-support').innerText = ai.support || '--';
-                    document.getElementById('s-up-p').innerText = (ai.scenario_up && ai.scenario_up.price) ? ai.scenario_up.price : '--'; document.getElementById('s-up-a').innerText = (ai.scenario_up && ai.scenario_up.action) ? ai.scenario_up.action : '--';
-                    document.getElementById('s-flat-p').innerText = (ai.scenario_flat && ai.scenario_flat.price) ? ai.scenario_flat.price : '--'; document.getElementById('s-flat-a').innerText = (ai.scenario_flat && ai.scenario_flat.action) ? ai.scenario_flat.action : '--';
-                    document.getElementById('s-down-p').innerText = (ai.scenario_down && ai.scenario_down.price) ? ai.scenario_down.price : '--'; document.getElementById('s-down-a').innerText = (ai.scenario_down && ai.scenario_down.action) ? ai.scenario_down.action : '--';
-                    
-                    document.getElementById('ai-pattern-k').innerText = `${ai.pattern_kline || '--'} / ${ai.pattern_trend || '--'}`;
-                    document.getElementById('ai-industry').innerText = ai.industry_desc || '--';
-                    document.getElementById('ai-related').innerText = ai.related_stocks || '--';
+                    for sc in ["scenario_up", "scenario_flat", "scenario_down"]:
+                        m_sc = re.search(f'"{sc}"\s*:\s*{{([^}}]+)}}', t)
+                        if m_sc:
+                            in_text = m_sc.group(1)
+                            p_match = re.search(r'"price"\s*:\s*"([^"]+)"', in_text)
+                            a_match = re.search(r'"action"\s*:\s*"([^"]+)"', in_text)
+                            if p_match: ai_data[sc]["price"] = p_match.group(1)
+                            if a_match: ai_data[sc]["action"] = a_match.group(1)
+        except Exception as e: print("AI 解析失敗，使用備援資料", e)
 
-                    let pup = ai.prob_up || 33; let pdown = ai.prob_down || 33; let pflat = ai.prob_flat || 34;
-                    document.getElementById('p-up').innerText = pup + "%"; document.getElementById('p-down').innerText = pdown + "%"; document.getElementById('p-flat').innerText = pflat + "%";
-                    let upDeg = pup * 3.6; let flatDeg = upDeg + (pflat * 3.6);
-                    document.getElementById('donutChart').style.background = `conic-gradient(var(--red) 0deg ${upDeg}deg, var(--orange) ${upDeg}deg ${flatDeg}deg, var(--green) ${flatDeg}deg 360deg)`;
+        return jsonify({
+            "status": "success", "symbol": symbol, "current_price": current_price, "interval": interval,
+            "chart_data": chart_data, "macd_data": macd_data, "kd_data": kd_data, 
+            "obv_data": obv_data, "chip_data": chip_chart_data, 
+            "foreign_data": foreign_data, "trust_data": trust_data,
+            "chip_table": chip_table_data, "fundamental": fun_data, "ai_analysis": ai_data
+        })
+    except Exception as e:
+        print(traceback.format_exc())
+        return jsonify({"status": "error", "message": f"伺服器錯誤: {str(e)}"}), 500
 
-                    let epsVal = parseFloat(data.fundamental.eps); let peVal = parseFloat(data.fundamental.pe_ratio);
-                    document.getElementById('slider-eps').value = (!isNaN(epsVal) && epsVal > 0) ? epsVal : 0; document.getElementById('slider-pe').value = (!isNaN(peVal) && peVal > 0 && peVal < 80) ? peVal : 15;
-                    updateCalc();
-
-                    let parsedSL = parseFloat((ai.stop_loss || '').replace(/[^\d.]/g, ''));
-                    document.getElementById('risk-stop-loss').value = (!isNaN(parsedSL) && parsedSL > 0) ? parsedSL : (currentAnalysis.price * 0.95).toFixed(2);
-                    updateRiskCalc();
-
-                    generateTechTable(data.chart_data, data.kd_data, data.macd_data);
-                    runBacktest(data.chart_data, data.kd_data, data.macd_data);
-                    renderCharts(data); updatePortfolioPrices();
-                } else { sysMsg.innerHTML = `<span style="color:var(--red);">❌ 分析出錯：${data.message}</span>`; }
-            } catch(e) { sysMsg.innerHTML = `<span style="color:var(--red);">⚠️ ${e.message}</span>`; }
-            finally { btn.disabled = false; btn.innerText = "⚡ 啟動終端"; }
-        }
-
-        function generateTechTable(kline, kd, macd) {
-            let lastK = kline[kline.length-1]; let prevK = kline[kline.length-2];
-            let lastKD = kd[kd.length-1]; let prevKD = kd[kd.length-2];
-            let lastM = macd[macd.length-1]; let prevM = macd[macd.length-2];
-            
-            let kdElS = document.getElementById('t-kd-s'), kdElD = document.getElementById('t-kd-d');
-            if (lastKD.k > lastKD.d) { kdElS.className = 'status-up'; kdElS.innerHTML = '↗ 多頭'; kdElD.innerText = 'K>D'; }
-            else { kdElS.className = 'status-down'; kdElS.innerHTML = '↘ 空頭'; kdElD.innerText = 'K<D'; }
-            if (prevKD.k <= prevKD.d && lastKD.k > lastKD.d) kdElD.innerText = '剛金叉';
-
-            let mElS = document.getElementById('t-macd-s'), mElD = document.getElementById('t-macd-d');
-            if (lastM.osc > 0) { mElS.className = 'status-up'; mElS.innerHTML = '↗ 多頭'; mElD.innerText = lastM.osc>prevM.osc?'紅柱擴大':'紅柱縮小'; } 
-            else { mElS.className = 'status-down'; mElS.innerHTML = '↘ 空頭'; mElD.innerText = lastM.osc<prevM.osc?'綠柱擴大':'綠柱縮小'; }
-
-            let maElS = document.getElementById('t-ma-s'), maElD = document.getElementById('t-ma-d');
-            if (lastK.ma5 > lastK.ma20 && lastK.ma20 > lastK.ma60) { maElS.className = 'status-up'; maElS.innerHTML = '↗ 多頭'; maElD.innerText = '5>20>60'; }
-            else if (lastK.ma5 < lastK.ma20 && lastK.ma20 < lastK.ma60) { maElS.className = 'status-down'; maElS.innerHTML = '↘ 空頭'; maElD.innerText = '5<20<60'; }
-            else { maElS.className = 'status-flat'; maElS.innerHTML = '→ 糾結'; maElD.innerText = '等待表態'; }
-
-            let bbElS = document.getElementById('t-bb-s'), bbElD = document.getElementById('t-bb-d');
-            if (lastK.close > lastK.ma20) { bbElS.className = 'status-up'; bbElS.innerHTML = '↗ 偏強'; bbElD.innerText = '站上中軌'; }
-            else { bbElS.className = 'status-down'; bbElS.innerHTML = '↘ 偏弱'; bbElD.innerText = '跌破中軌'; }
-        }
-
-        function updateCalc() {
-            let eps = parseFloat(document.getElementById('slider-eps').value); let pe = parseFloat(document.getElementById('slider-pe').value);
-            document.getElementById('calc-eps-val').innerText = eps.toFixed(2); document.getElementById('calc-pe-val').innerText = pe.toFixed(1);
-            let tp = eps * pe; document.getElementById('calc-result').innerText = tp.toFixed(2);
-            if(currentAnalysis.price > 0) {
-                let diff = ((tp - currentAnalysis.price) / currentAnalysis.price) * 100; let sEl = document.getElementById('calc-status');
-                if(diff > 10) { sEl.innerText = `潛在: +${diff.toFixed(1)}%`; sEl.style.color = "var(--red)"; } 
-                else if(diff < -10) { sEl.innerText = `溢價: ${diff.toFixed(1)}%`; sEl.style.color = "var(--green)"; } 
-                else { sEl.innerText = `合理估值`; sEl.style.color = "var(--orange)"; }
-            }
-        }
-
-        function runBacktest(klineData, kdData, macdData) {
-            let holding = false, buyPrice = 0, totalReturn = 0, wins = 0, losses = 0;
-            let priceMap = {}; klineData.forEach(d => { priceMap[d.time] = d.close; });
-            let ma20Map = {}; klineData.forEach(d => { ma20Map[d.time] = d.ma20; });
-            let macdMap = {}; macdData.forEach(d => { macdMap[d.time] = d.osc; });
-
-            for (let i = 1; i < kdData.length; i++) {
-                const p = kdData[i - 1], c = kdData[i];
-                const cp = priceMap[c.time]; const ma20 = ma20Map[c.time] || 0; const osc = macdMap[c.time] || 0;
-                if(!cp) continue;
-                if (!holding && p.k <= p.d && c.k > c.d && cp > ma20 && osc > 0) { holding = true; buyPrice = cp; }
-                else if (holding && p.k >= p.d && c.k < c.d) { holding = false; let ret = ((cp - buyPrice) / buyPrice) * 100; totalReturn += ret; if (ret > 0) wins++; else losses++; }
-            }
-            if (holding) { let ret = ((klineData[klineData.length-1].close - buyPrice) / buyPrice) * 100; totalReturn += ret; if (ret > 0) wins++; else losses++; }
-            
-            let total = wins + losses; let wr = total > 0 ? Math.round((wins / total) * 100) : 0;
-            document.getElementById('gaugeText').innerText = `${wr}%`;
-            document.getElementById('gaugeLabel').innerText = `${total}次 / ${totalReturn>0?'+':''}${totalReturn.toFixed(1)}%`;
-            let deg = -90 + (180 * (wr / 100)); document.getElementById('gaugeNeedle').style.transform = `rotate(${deg}deg)`;
-            if (wr >= 60) document.getElementById('gaugeText').style.color = "var(--red)"; else if (wr <= 40) document.getElementById('gaugeText').style.color = "var(--green)"; else document.getElementById('gaugeText').style.color = "white";
-        }
-
-        function updateRiskCalc() {
-            let cp = currentAnalysis.price; let sl = parseFloat(document.getElementById('risk-stop-loss').value); let maxLoss = parseFloat(document.getElementById('risk-max-loss').value);
-            if (cp > 0 && sl > 0 && cp > sl && maxLoss > 0) {
-                let riskPerLot = (cp - sl) * 1000; let maxLots = maxLoss / riskPerLot; document.getElementById('risk-result').innerText = maxLots.toFixed(1) + ' 張';
-            } else { document.getElementById('risk-result').innerText = '0 張'; }
-        }
-
-        function renderCharts(data) {
-            for (let key in charts) { if (charts[key]) { try { charts[key].remove(); } catch (e) {} } }
-            charts = {}; seriesDict = {};
-            const iv = data.interval;
-            const opt = { layout: { background: '#0a1128', textColor: '#94a3b8' }, grid: { vertLines: { color: '#1e3a8a' }, horzLines: { color: '#1e3a8a' } }, crosshair: { mode: LightweightCharts.CrosshairMode.Normal }, timeScale: { visible: false, timeVisible: iv !== '1d' } };
-
-            charts.main = LightweightCharts.createChart(document.getElementById('mainChart'), { ...opt, height: 330 });
-            seriesDict.bbUpper = charts.main.addLineSeries({ color: 'rgba(255,255,255,0.3)', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false });
-            seriesDict.bbLower = charts.main.addLineSeries({ color: 'rgba(255,255,255,0.3)', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false });
-            if (data.chart_data[0].bb_upper) { seriesDict.bbUpper.setData(data.chart_data.map(d => ({ time: d.time, value: d.bb_upper }))); seriesDict.bbLower.setData(data.chart_data.map(d => ({ time: d.time, value: d.bb_lower }))); }
-            seriesDict.candle = charts.main.addCandlestickSeries({ upColor: '#ef4444', downColor: '#10b981', borderVisible: false, wickUpColor: '#ef4444', wickDownColor: '#10b981' }); seriesDict.candle.setData(data.chart_data);
-            seriesDict.ma5 = charts.main.addLineSeries({ color: '#fde047', lineWidth: 1.5, crosshairMarkerVisible: false }); seriesDict.ma5.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma5 })));
-            seriesDict.ma20 = charts.main.addLineSeries({ color: '#f43f5e', lineWidth: 1.5, crosshairMarkerVisible: false }); seriesDict.ma20.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma20 })));
-            seriesDict.ma60 = charts.main.addLineSeries({ color: '#06b6d4', lineWidth: 1.5, crosshairMarkerVisible: false }); seriesDict.ma60.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma60 })));
-
-            const legend = document.getElementById('chartLegend');
-            const lma5 = document.getElementById('l-ma5'); const lma20 = document.getElementById('l-ma20'); const lma60 = document.getElementById('l-ma60'); const lbb = document.getElementById('l-bb');
-
-            charts.main.subscribeCrosshairMove(param => {
-                if (param.time && param.seriesData.get(seriesDict.candle)) {
-                    const p = param.seriesData.get(seriesDict.candle);
-                    let tStr = param.time; if (typeof param.time === 'number') { tStr = new Date(param.time * 1000).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); }
-                    legend.style.display = 'block';
-                    legend.innerHTML = `${tStr} 開 <span style="color:#fff">${p.open.toFixed(2)}</span> 高 <span style="color:var(--red)">${p.high.toFixed(2)}</span> 低 <span style="color:var(--green)">${p.low.toFixed(2)}</span> 收 <span style="color:var(--cyan)">${p.close.toFixed(2)}</span>`;
-                    const m5 = param.seriesData.get(seriesDict.ma5); lma5.innerText = `M5:${m5 ? m5.value.toFixed(1) : '--'}`;
-                    const m20 = param.seriesData.get(seriesDict.ma20); lma20.innerText = `M20:${m20 ? m20.value.toFixed(1) : '--'}`;
-                    const m60 = param.seriesData.get(seriesDict.ma60); lma60.innerText = `M60:${m60 ? m60.value.toFixed(1) : '--'}`;
-                    const bbu = param.seriesData.get(seriesDict.bbUpper); lbb.innerText = `上軌:${bbu ? bbu.value.toFixed(1) : '--'}`;
-                } else { legend.style.display = 'none'; }
-            });
-
-            if (data.kd_data && data.kd_data.length > 1) {
-                let markers = [];
-                let macdMap = {}; data.macd_data.forEach(d => { macdMap[d.time] = d.osc; });
-                let ma20Map = {}; data.chart_data.forEach(d => { ma20Map[d.time] = d.ma20; });
-                let priceMap = {}; data.chart_data.forEach(d => { priceMap[d.time] = d.close; });
-                for (let i = 1; i < data.kd_data.length; i++) {
-                    const p = data.kd_data[i - 1], c = data.kd_data[i];
-                    let cp = priceMap[c.time]; let ma20 = ma20Map[c.time] || 0; let osc = macdMap[c.time] || 0;
-                    if (p.k <= p.d && c.k > c.d && cp > ma20 && osc > 0) { markers.push({ time: c.time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp', text: '嚴選買' }); }
-                    else if (p.k >= p.d && c.k < c.d) { markers.push({ time: c.time, position: 'aboveBar', color: '#10b981', shape: 'arrowDown', text: '賣' }); }
-                }
-                seriesDict.candle.setMarkers(markers);
-            }
-
-            charts.macd = LightweightCharts.createChart(document.getElementById('macdChart'), { ...opt, height: 95 });
-            charts.macd.addHistogramSeries({ color: '#10b981', priceFormat: { type: 'volume' } }).setData(data.macd_data.map(d => ({ time: d.time, value: d.osc, color: d.osc > 0 ? '#ef4444' : '#10b981' })));
-            charts.macd.addLineSeries({ color: '#3b82f6', lineWidth: 1 }).setData(data.macd_data.map(d => ({ time: d.time, value: d.dif })));
-            
-            charts.kd = LightweightCharts.createChart(document.getElementById('kdChart'), { ...opt, height: 95 });
-            charts.kd.addLineSeries({ color: '#3b82f6', lineWidth: 1 }).setData(data.kd_data.map(d => ({ time: d.time, value: d.k })));
-            charts.kd.addLineSeries({ color: '#f59e0b', lineWidth: 1 }).setData(data.kd_data.map(d => ({ time: d.time, value: d.d })));
-
-            const allCharts = [charts.main, charts.macd, charts.kd];
-            
-            if (iv === '1d') {
-                charts.chip = LightweightCharts.createChart(document.getElementById('chipChart'), { ...opt, height: 110, timeScale: { visible: true } });
-                const chipTotal = charts.chip.addHistogramSeries({ priceFormat: { type: 'volume' } });
-                if (data.chip_data && data.chip_data.length > 0) chipTotal.setData(data.chip_data.map(d => ({ time: d.time, value: d.value, color: d.value > 0 ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)' })));
-                seriesDict.foreignLine = charts.chip.addLineSeries({ color: '#fde047', lineWidth: 1.5 });
-                if (data.foreign_data && data.foreign_data.length > 0) seriesDict.foreignLine.setData(data.foreign_data);
-                seriesDict.trustLine = charts.chip.addLineSeries({ color: '#f43f5e', lineWidth: 1.5 });
-                if (data.trust_data && data.trust_data.length > 0) seriesDict.trustLine.setData(data.trust_data);
-                
-                const lFor = document.getElementById('l-for'); const lTru = document.getElementById('l-tru');
-                charts.chip.subscribeCrosshairMove(param => {
-                    if (param.time) {
-                        const fVal = param.seriesData.get(seriesDict.foreignLine); lFor.innerText = `外:${fVal ? fVal.value.toFixed(0) : '--'}`;
-                        const tVal = param.seriesData.get(seriesDict.trustLine); lTru.innerText = `投:${tVal ? tVal.value.toFixed(0) : '--'}`;
-                    }
-                });
-                allCharts.push(charts.chip);
-            }
-
-            const sync = (s, t) => { s.timeScale().subscribeVisibleTimeRangeChange(r => { t.forEach(x => x.timeScale().setVisibleRange(r)); }); };
-            allCharts.forEach(s => sync(s, allCharts.filter(c => c !== s)));
-            charts.main.timeScale().fitContent();
-        }
-
-        function buyStock() { 
-            if(!currentAnalysis.symbol) return; 
-            let lotsStr = prompt(`買進 ${currentAnalysis.symbol}，輸入張數：`, "1");
-            if(lotsStr === null) return; let lots = parseFloat(lotsStr); if(isNaN(lots) || lots <= 0) return;
-            portfolio.push({ symbol: currentAnalysis.symbol, buyPrice: currentAnalysis.price, currentPrice: currentAnalysis.price, lots: lots }); 
-            saveAndRender(); 
-        }
-        function sellStock(index) { portfolio.splice(index, 1); saveAndRender(); }
-        function saveAndRender() { localStorage.setItem('myPortfolio_v2', JSON.stringify(portfolio)); renderPortfolio(); }
-        function renderPortfolio() {
-            const tbody = document.getElementById('portfolioBody'); tbody.innerHTML = '';
-            let totalCost = 0, totalValue = 0;
-            if(portfolio.length === 0) { 
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">無持股</td></tr>'; 
-            } else {
-                portfolio.forEach((item, index) => {
-                    let cost = item.buyPrice * item.lots * 1000; let val = item.currentPrice * item.lots * 1000;
-                    totalCost += cost; totalValue += val;
-                    let pnlAmt = val - cost;
-                    const cClass = pnlAmt >= 0 ? 'txt-red' : 'txt-green';
-                    const pureSym = item.symbol.split('.')[0];
-                    tbody.innerHTML += `<tr><td style="color:white;">${pureSym}</td><td>${item.lots}</td><td>${item.buyPrice.toFixed(1)}</td><td>${parseFloat(item.currentPrice).toFixed(1)}</td><td class="${cClass}">${pnlAmt>0?'+':''}${pnlAmt.toFixed(0)}</td><td><button style="background:var(--cyan); color:#020617; font-weight:bold; border:none; padding:2px 6px; border-radius:2px; cursor:pointer; font-size:10px;" onclick="sellStock(${index})">平倉</button></td></tr>`;
-                });
-            }
-            document.getElementById('pf-cost').innerText = totalCost.toLocaleString(undefined, {maximumFractionDigits:0});
-            document.getElementById('pf-value').innerText = totalValue.toLocaleString(undefined, {maximumFractionDigits:0});
-            let totPnl = totalValue - totalCost; let totPct = totalCost > 0 ? (totPnl / totalCost) * 100 : 0;
-            let amtEl = document.getElementById('pf-pnl-amt'); let pctEl = document.getElementById('pf-pnl-pct');
-            amtEl.innerText = totPnl >= 0 ? `+${totPnl.toLocaleString(undefined, {maximumFractionDigits:0})}` : totPnl.toLocaleString(undefined, {maximumFractionDigits:0});
-            pctEl.innerText = totPct >= 0 ? `+${totPct.toFixed(2)}%` : `${totPct.toFixed(2)}%`;
-            amtEl.style.color = totPnl > 0 ? "var(--red)" : (totPnl < 0 ? "var(--green)" : "white");
-            pctEl.style.color = totPnl > 0 ? "var(--red)" : (totPnl < 0 ? "var(--green)" : "white");
-        }
-        async function updatePortfolioPrices() {
-            if(portfolio.length === 0) return;
-            for (let i = 0; i < portfolio.length; i++) {
-                try { const res = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${portfolio[i].symbol}`); if(res.ok) { const data = await res.json(); if(data.status === "success") portfolio[i].currentPrice = data.current_price; } } catch(e) {}
-            }
-            saveAndRender();
-        }
-    </script>
-</body>
-</html>
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
