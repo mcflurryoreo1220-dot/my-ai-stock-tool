@@ -40,7 +40,7 @@ RADAR_WATCHLIST = [s for group in SECTORS.values() for s in group] + ['2330.TW',
 
 @app.route('/')
 def home():
-    return "AI 戰情室大腦運轉中！(搭載量價背離與產業抓取引擎)"
+    return "AI 戰情室大腦運轉中！(搭載避險基金經理模式)"
 
 def fetch_stock_basic(symbol):
     try:
@@ -141,7 +141,6 @@ def predict():
 
         if df.empty: return jsonify({"status": "error", "message": "查無資料，請確認代碼"}), 400
 
-        # 技術指標計算
         df['MA5'] = df['Close'].rolling(window=5).mean()
         df['MA10'] = df['Close'].rolling(window=10).mean()
         df['MA20'] = df['Close'].rolling(window=20).mean()
@@ -149,8 +148,6 @@ def predict():
         df['BB_std'] = df['Close'].rolling(window=20).std()
         df['BB_upper'] = df['MA20'] + 2 * df['BB_std']
         df['BB_lower'] = df['MA20'] - 2 * df['BB_std']
-        
-        # 新增：計算成交量 5MA
         df['Vol_MA5'] = df['Volume'].rolling(window=5).mean()
 
         df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
@@ -186,25 +183,15 @@ def predict():
         current_price = round(float(df['Close'].iloc[-1]), 2)
         pure_symbol = symbol.split('.')[0]
         
-        # === 新增：抓取真實產業別 ===
-        fun_data = {"eps": "--", "pe_ratio": "--", "industry": "台股"}
+        fun_data = {"industry": "台股"}
         try:
             info = stock.info
             display_name = STOCK_DICT.get(pure_symbol, info.get('shortName', pure_symbol))
-            eps, pe = info.get("trailingEps"), info.get("trailingPE")
-            industry_raw = info.get("industry", "")
-            sector_raw = info.get("sector", "")
-            if eps: fun_data["eps"] = round(eps, 2)
-            if pe: fun_data["pe_ratio"] = round(pe, 2)
-            # 組合產業名稱，若無則預設
-            combined_ind = f"{sector_raw} {industry_raw}".strip()
-            if combined_ind:
-                fun_data["industry"] = combined_ind
-            else:
-                fun_data["industry"] = "電子零組件/半導體" # 若無外資資料，給予常見預設
+            combined_ind = f"{info.get('sector', '')} {info.get('industry', '')}".strip()
+            if combined_ind: fun_data["industry"] = combined_ind
+            else: fun_data["industry"] = "電子零組件/半導體"
         except: display_name = STOCK_DICT.get(pure_symbol, pure_symbol)
 
-        # === 新增：量價背離純量化分析 ===
         last_row = df.iloc[-1]
         prev_row = df.iloc[-2]
         
@@ -215,7 +202,6 @@ def predict():
             "vol_change": int(last_row['Volume'] - prev_row['Volume'])
         }
         
-        # 量價背離邏輯判斷
         if vol_data['price_change'] > 0 and vol_data['vol_change'] >= 0:
             vol_data['status'] = "價漲量增"
             vol_data['desc'] = "健康上漲格局，買盤推升。"
@@ -234,7 +220,7 @@ def predict():
             vol_data['color'] = "var(--text-muted)"
 
         chip_info, chip_chart_data, chip_table_data, foreign_data, trust_data = "無近期資料", [], [], [], []
-        net_foreign_5d = 0 # 輔助判斷主力警示
+        net_foreign_5d = 0
         if interval == '1d':
             try:
                 dl = DataLoader()
@@ -254,14 +240,11 @@ def predict():
                         trust_data.append({"time": t_str, "value": round(r['投信']/1000, 2)})
                     
                     chip_info = pv.tail(3).to_string() 
-                    last_5 = pv.tail(5)
-                    net_foreign_5d = last_5['外資'].sum()
-                    
+                    net_foreign_5d = pv.tail(5)['外資'].sum()
                     for _, r in pv.tail(10).iloc[::-1].iterrows():
                         chip_table_data.append({"date": str(r['date'])[5:], "foreign": round(r['外資']/1000,1), "trust": round(r['投信']/1000,1), "dealer": round(r['自營']/1000,1), "total": round(r['合計']/1000,1)})
             except: pass
 
-        # === 綜合主力警示邏輯 ===
         warning_box = {"active": False, "title": "安全", "msg": "目前無明顯出貨跡象", "level": "safe"}
         if vol_data['status'] == "價跌量增" or (vol_data['status'] == "量價背離 (漲)" and net_foreign_5d < 0):
             warning_box = {"active": True, "title": "🚨 主力警示", "msg": "量價結構轉弱，疑似主力逢高調節，請嚴格控管資金部位！", "level": "danger"}
@@ -272,6 +255,7 @@ def predict():
         if last_row['K'] > last_row['D'] and last_row['Close'] > last_row['MA20']: fallback_signal = "多頭格局"
         elif last_row['K'] < last_row['D'] and last_row['Close'] < last_row['MA20']: fallback_signal = "空頭弱勢"
         
+        # === 全新：機構級 AI JSON 結構 ===
         ai_data = {
             "signal": fallback_signal, 
             "pressure": str(round(last_row['BB_upper'], 2)), 
@@ -280,19 +264,25 @@ def predict():
             "prob_up": 45 if fallback_signal == "多頭格局" else 25, 
             "prob_down": 25 if fallback_signal == "多頭格局" else 45, 
             "prob_flat": 30,
-            "pattern_kline": "量價計算中", "pattern_trend": "均線與布林計算中", 
-            "chip_status": "請參考左方三大法人明細",
-            "industry_desc": fun_data["industry"], # 直接帶入真實產業
-            "related_stocks": "依產業別連動",
+            "pattern_kline": "量化模型計算中", "pattern_trend": "均線與布林計算中", 
+            "chip_status": "請參考左方明細",
+            "industry_desc": fun_data["industry"], 
+            "related_stocks": "同族群個股",
             "scenario_up": {"price": str(round(last_row['BB_upper'], 2)), "action": "突破上軌順勢偏多"}, 
             "scenario_flat": {"price": str(round(last_row['Close'], 2)), "action": "均線附近來回操作"}, 
             "scenario_down": {"price": str(round(last_row['MA20'], 2)), "action": "跌破月線嚴格停損"},
-            "stars": 3, "advice": ["量價背離與成交量已由系統精算完成", "請參考上方最新警示面板"]
+            # 機構級新增欄位備援
+            "moat_score": "7",
+            "moat_desc": "品牌力與技術專利分析中...",
+            "market_narrative": "市場傳聞與利多已部分反映",
+            "narrative_risk": "需留意總經與同業競爭風險",
+            "bull_bear": "牛市上看前高，熊市防守年線",
+            "risk_factors": ["總體經濟放緩", "同業競爭加劇", "技術更迭風險"]
         }
         
         try:
             prompt = (
-                f"你是專業操盤手。分析 {display_name} ({pure_symbol})。\n"
+                f"請扮演一位避險基金經理與資深量化分析師。分析 {display_name} ({pure_symbol})。\n"
                 f"務必只輸出純 JSON，格式如下：\n"
                 f"{{\n"
                 f"  \"signal\": \"多/空/震盪\", \"pressure\": \"壓力價\", \"support\": \"支撐價\", \"stop_loss\": \"停損價\",\n"
@@ -301,11 +291,17 @@ def predict():
                 f"  \"chip_status\": \"法人動向(15字)\", \"industry_desc\": \"{fun_data['industry']}\", \"related_stocks\": \"概念股\",\n"
                 f"  \"scenario_up\": {{\"price\": \"突破價\", \"action\": \"建議\"}},\n"
                 f"  \"scenario_flat\": {{\"price\": \"震盪價\", \"action\": \"建議\"}},\n"
-                f"  \"scenario_down\": {{\"price\": \"防守價\", \"action\": \"建議\"}}\n"
+                f"  \"scenario_down\": {{\"price\": \"防守價\", \"action\": \"建議\"}},\n"
+                f"  \"moat_score\": \"護城河分數1-10\",\n"
+                f"  \"moat_desc\": \"商業模式與護城河分析(30字內)\",\n"
+                f"  \"market_narrative\": \"當前市場敘事(那些被定價進去了?)(30字內)\",\n"
+                f"  \"narrative_risk\": \"市場可能看錯的地方(20字內)\",\n"
+                f"  \"bull_bear\": \"牛熊預測推演(20字內)\",\n"
+                f"  \"risk_factors\": [\"最大風險1\", \"最大風險2\"]\n"
                 f"}}\n"
             )
             model = genai.GenerativeModel('gemini-1.5-flash')
-            response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.1))
+            response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.2))
             text = response.text
             match = re.search(r'\{[\s\S]*\}', text)
             if match:
@@ -327,6 +323,18 @@ def predict():
                 ai_data["industry_desc"] = ext_str("industry_desc", fun_data["industry"])
                 ai_data["related_stocks"] = ext_str("related_stocks", "--")
                 
+                ai_data["moat_score"] = ext_str("moat_score", ai_data["moat_score"])
+                ai_data["moat_desc"] = ext_str("moat_desc", ai_data["moat_desc"])
+                ai_data["market_narrative"] = ext_str("market_narrative", ai_data["market_narrative"])
+                ai_data["narrative_risk"] = ext_str("narrative_risk", ai_data["narrative_risk"])
+                ai_data["bull_bear"] = ext_str("bull_bear", ai_data["bull_bear"])
+                
+                # 萃取風險陣列
+                rf_match = re.search(r'"risk_factors"\s*:\s*\[(.*?)\]', t)
+                if rf_match:
+                    rfs = rf_match.group(1).replace('"', '').split(',')
+                    ai_data["risk_factors"] = [rf.strip() for rf in rfs if rf.strip()][:2]
+                
                 pu = ext_int("prob_up", 33); pd_ = ext_int("prob_down", 33); pf = ext_int("prob_flat", 34)
                 if pu > 0 or pd_ > 0 or pf > 0:
                     ai_data["prob_up"]=pu; ai_data["prob_down"]=pd_; ai_data["prob_flat"]=pf
@@ -347,7 +355,7 @@ def predict():
             "obv_data": obv_data, "chip_data": chip_chart_data, 
             "foreign_data": foreign_data, "trust_data": trust_data,
             "chip_table": chip_table_data, "fundamental": fun_data, "ai_analysis": ai_data,
-            "volume_data": vol_data, "warning_box": warning_box # 送出量價與警示資料
+            "volume_data": vol_data, "warning_box": warning_box
         })
     except Exception as e:
         print(traceback.format_exc())
