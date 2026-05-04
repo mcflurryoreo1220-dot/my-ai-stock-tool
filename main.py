@@ -23,7 +23,7 @@ RADAR_WATCHLIST = ['2330.TW', '2317.TW', '2454.TW', '2382.TW', '3231.TW', '2603.
 
 @app.route('/')
 def home():
-    return "AI 戰情室大腦運轉中！(搭載布林通道與AI機率預測引擎)"
+    return "AI 戰情室大腦運轉中！(搭載高階劇本與產業連動分析 - 防呆強化版)"
 
 def check_radar_symbol(symbol):
     try:
@@ -91,13 +91,11 @@ def predict():
 
         if df.empty: return jsonify({"status": "error", "message": "查無資料，請確認代碼"}), 400
 
-        # === 計算所有技術指標 (含新增的布林通道) ===
         df['MA5'] = df['Close'].rolling(window=5).mean()
         df['MA10'] = df['Close'].rolling(window=10).mean()
         df['MA20'] = df['Close'].rolling(window=20).mean()
         df['MA60'] = df['Close'].rolling(window=60).mean()
         
-        # 布林通道 (Bollinger Bands)
         df['BB_std'] = df['Close'].rolling(window=20).std()
         df['BB_upper'] = df['MA20'] + 2 * df['BB_std']
         df['BB_lower'] = df['MA20'] - 2 * df['BB_std']
@@ -126,8 +124,7 @@ def predict():
             tv = date.strftime('%Y-%m-%d') if interval == '1d' else int(date.timestamp())
             chart_data.append({
                 "time": tv, "open": round(row['Open'],2), "high": round(row['High'],2), "low": round(row['Low'],2), "close": round(row['Close'],2), 
-                "ma5": row['MA5'], "ma20": row['MA20'], "ma60": row['MA60'],
-                "bb_upper": row['BB_upper'], "bb_lower": row['BB_lower'] # 輸出布林通道
+                "ma5": row['MA5'], "ma20": row['MA20'], "ma60": row['MA60'], "bb_upper": row['BB_upper'], "bb_lower": row['BB_lower']
             })
             macd_data.append({"time": tv, "dif": row['DIF'], "signal": row['MACD_Signal'], "osc": row['OSC']})
             kd_data.append({"time": tv, "k": row['K'], "d": row['D']})
@@ -165,46 +162,82 @@ def predict():
                         foreign_data.append({"time": t_str, "value": round(r['外資']/1000, 2)})
                         trust_data.append({"time": t_str, "value": round(r['投信']/1000, 2)})
                     
-                    chip_info = pv.tail(5).to_string() 
+                    # 提速：只給 AI 看 3 天的籌碼
+                    chip_info = pv.tail(3).to_string() 
                     for _, r in pv.tail(10).iloc[::-1].iterrows():
                         chip_table_data.append({"date": str(r['date'])[5:], "foreign": round(r['外資']/1000,1), "trust": round(r['投信']/1000,1), "dealer": round(r['自營']/1000,1), "total": round(r['合計']/1000,1)})
             except: pass
 
-        # === 【核心升級：要求 AI 預測漲跌機率】 ===
+        # 提速：只給 AI 看 3 天的技術面
+        tech_str = df[['Close', 'MA20', 'OSC', 'K', 'D']].tail(3).to_string()
+
         prompt = (
-            f"你是一位精通全球產業鏈的台股量化操盤手。分析 {display_name} ({pure_symbol})。\n"
-            f"請輸出 JSON，不要有任何 Markdown。\n"
+            f"你是專業操盤手。分析 {display_name} ({pure_symbol})。\n"
+            f"務必只輸出純 JSON，格式如下：\n"
             f"{{\n"
-            f"  \"signal\": \"偏多/偏空/震盪\",\n  \"pressure\": \"壓力價\",\n  \"support\": \"支撐價\",\n  \"stop_loss\": \"停損價\",\n"
-            f"  \"prob_up\": 上漲機率(整數,例如 60),\n  \"prob_down\": 下跌機率(整數,例如 25),\n  \"prob_flat\": 震盪機率(整數,例如 15, 三者相加須為100),\n"
-            f"  \"pattern_kline\": \"描述近期K線型態(限10字)\",\n  \"pattern_trend\": \"描述均線排列(限10字)\",\n"
-            f"  \"industry_desc\": \"描述所屬產業模塊(限15字)\",\n  \"related_stocks\": \"列出3-4檔連動概念股\",\n"
-            f"  \"scenario_up\": {{\"price\": \"突破價\", \"action\": \"建議操作(限15字)\"}},\n"
-            f"  \"scenario_flat\": {{\"price\": \"震盪價\", \"action\": \"建議操作(限15字)\"}},\n"
-            f"  \"scenario_down\": {{\"price\": \"防守價\", \"action\": \"建議操作(限15字)\"}},\n"
-            f"  \"stars\": 1到5的整數,\n  \"advice\": [\"總結建議1\", \"總結建議2\"]\n"
-            f"}}\n\n"
-            f"基本面：{fun_data}\n技術面：{df.tail(10).to_string()}\n籌碼面：{chip_info}"
+            f"  \"signal\": \"多/空/震盪\", \"pressure\": \"壓力價\", \"support\": \"支撐價\", \"stop_loss\": \"停損價\",\n"
+            f"  \"prob_up\": 40, \"prob_down\": 30, \"prob_flat\": 30,\n"
+            f"  \"pattern_kline\": \"描述K線型態(10字內)\", \"pattern_trend\": \"描述均線(10字內)\",\n"
+            f"  \"industry_desc\": \"所屬產業(10字內)\", \"related_stocks\": \"概念股\",\n"
+            f"  \"scenario_up\": {{\"price\": \"突破價\", \"action\": \"建議\"}},\n"
+            f"  \"scenario_flat\": {{\"price\": \"震盪價\", \"action\": \"建議\"}},\n"
+            f"  \"scenario_down\": {{\"price\": \"防守價\", \"action\": \"建議\"}},\n"
+            f"  \"stars\": 3, \"advice\": [\"總結1\", \"總結2\"]\n"
+            f"}}\n"
+            f"技術面：{tech_str}\n籌碼：{chip_info}"
         )
         
-        ai_data = None
-        for model_name in ['gemini-1.5-flash', 'gemini-1.5-pro']:
+        # === 【終極暴力萃取引擎】 ===
+        ai_data = {
+            "signal": "震盪", "pressure": "--", "support": "--", "stop_loss": "--", 
+            "prob_up": 33, "prob_down": 33, "prob_flat": 34,
+            "pattern_kline": "--", "pattern_trend": "--", "industry_desc": "--", "related_stocks": "--",
+            "scenario_up": {"price":"--", "action":"--"}, "scenario_flat": {"price":"--", "action":"--"}, "scenario_down": {"price":"--", "action":"--"},
+            "stars": 3, "advice": ["圖表與量化指標已載入", "請依據指標與籌碼自行判斷"]
+        }
+
+        for model_name in ['gemini-1.5-flash']:
             try:
                 model = genai.GenerativeModel(model_name)
                 response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.2))
-                text = re.sub(r'```json\n?', '', response.text).replace('```', '').strip()
+                text = response.text
+                
+                # 嘗試標準解析
                 match = re.search(r'\{[\s\S]*\}', text)
                 if match:
-                    ai_data = json.loads(match.group(0))
-                    break
-            except Exception as e: print(f"[{model_name}] 解析失敗", e)
-                
-        if not ai_data:
-            ai_data = {"signal": "等待連線", "pressure": "--", "support": "--", "stop_loss": "--", 
-                       "prob_up": 33, "prob_down": 33, "prob_flat": 34,
-                       "pattern_kline": "解析中", "pattern_trend": "解析中", "industry_desc": "解析中", "related_stocks": "解析中",
-                       "scenario_up": {"price":"--", "action":"--"}, "scenario_flat": {"price":"--", "action":"--"}, "scenario_down": {"price":"--", "action":"--"},
-                       "stars": 0, "advice": ["請稍後重新點擊分析"]}
+                    try:
+                        parsed = json.loads(match.group(0))
+                        ai_data.update(parsed)
+                        break
+                    except:
+                        # 如果 Json 格式壞了，我們用暴力 Regex 硬挖關鍵字！
+                        t = match.group(0)
+                        
+                        def ext_str(key): 
+                            m = re.search(f'"{key}"\s*:\s*"([^"]+)"', t)
+                            return m.group(1) if m else "--"
+                        
+                        def ext_int(key):
+                            m = re.search(f'"{key}"\s*:\s*(\d+)', t)
+                            return int(m.group(1)) if m else 0
+
+                        ai_data["signal"] = ext_str("signal")
+                        ai_data["pressure"] = ext_str("pressure")
+                        ai_data["support"] = ext_str("support")
+                        ai_data["stop_loss"] = ext_str("stop_loss")
+                        
+                        pu = ext_int("prob_up"); pd_ = ext_int("prob_down"); pf = ext_int("prob_flat")
+                        if pu+pd_+pf == 100:
+                            ai_data["prob_up"]=pu; ai_data["prob_down"]=pd_; ai_data["prob_flat"]=pf
+                        
+                        ai_data["pattern_kline"] = ext_str("pattern_kline")
+                        ai_data["pattern_trend"] = ext_str("pattern_trend")
+                        ai_data["industry_desc"] = ext_str("industry_desc")
+                        ai_data["related_stocks"] = ext_str("related_stocks")
+                        
+                        ai_data["advice"] = ["已啟動暴力萃取還原部分數據", "建議參考圖表技術指標"]
+                        break
+            except Exception as e: print(f"[{model_name}] 失敗", e)
 
         return jsonify({
             "status": "success", "symbol": symbol, "current_price": current_price, "interval": interval,
