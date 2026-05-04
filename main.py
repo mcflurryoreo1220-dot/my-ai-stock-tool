@@ -19,9 +19,16 @@ api_key = os.environ.get("GOOGLE_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
 
-RADAR_WATCHLIST = ['2330.TW', '2317.TW', '2454.TW', '2382.TW', '3231.TW', '2603.TW', '1519.TW', '3661.TW', '6285.TW', '6147.TWO', '6269.TW', '2441.TW']
+# 內建翻譯字典：強制將 yfinance 的英文轉回中文
+STOCK_DICT = {
+    "2382": "廣達", "3231": "緯創", "2376": "技嘉", "3324": "雙鴻", "3017": "奇鋐",
+    "3661": "世芯-KY", "3131": "弘塑", "6187": "萬潤", "6683": "雍智科技", "3583": "辛耘",
+    "3163": "波若威", "3363": "上詮", "4979": "華星光", "6442": "光聖", "4908": "前鼎",
+    "2504": "國產", "2515": "中工", "2520": "冠德", "1436": "華友聯", "2501": "國建",
+    "1503": "士電", "1504": "東元", "1513": "中興電", "1514": "亞力", "1519": "華城",
+    "2330": "台積電", "2317": "鴻海", "2454": "聯發科", "2301": "光寶科"
+}
 
-# === 新增：產業板塊字典 ===
 SECTORS = {
     "🔥 AI 伺服器 & 散熱": ["2382.TW", "3231.TW", "2376.TW", "3324.TW", "3017.TW"],
     "🚀 CoWoS 先進封裝": ["3661.TW", "3131.TW", "6187.TW", "6683.TW", "3583.TW"],
@@ -30,9 +37,11 @@ SECTORS = {
     "🔋 重電與綠能": ["1503.TW", "1504.TW", "1513.TW", "1514.TW", "1519.TW"]
 }
 
+RADAR_WATCHLIST = [s for group in SECTORS.values() for s in group] + ['2330.TW', '2317.TW']
+
 @app.route('/')
 def home():
-    return "AI 戰情室大腦運轉中！(搭載產業板塊熱力圖與強化萃取)"
+    return "AI 戰情室大腦運轉中！(搭載中文翻譯與本地備援大腦)"
 
 def fetch_stock_basic(symbol):
     try:
@@ -47,8 +56,12 @@ def fetch_stock_basic(symbol):
             curr = df.iloc[-1]['Close']
             prev = df.iloc[-2]['Close']
             change_pct = ((curr - prev) / prev) * 100
-            name = stock.info.get('shortName', symbol.split('.')[0])
-            return {"symbol": symbol.split('.')[0], "name": name, "price": round(curr, 2), "change": round(change_pct, 2)}
+            
+            pure_sym = symbol.split('.')[0]
+            # 強制使用中文翻譯字典
+            name = STOCK_DICT.get(pure_sym, stock.info.get('shortName', pure_sym))
+            
+            return {"symbol": pure_sym, "name": name, "price": round(curr, 2), "change": round(change_pct, 2)}
     except: pass
     return None
 
@@ -60,7 +73,6 @@ def get_sectors():
             for sector_name, symbols in SECTORS.items():
                 results = list(executor.map(fetch_stock_basic, symbols))
                 valid_results = [r for r in results if r]
-                # 依漲幅排序
                 valid_results.sort(key=lambda x: x['change'], reverse=True)
                 sector_results[sector_name] = valid_results
         return jsonify({"status": "success", "data": sector_results})
@@ -98,7 +110,9 @@ def check_radar_symbol(symbol):
         trend_up = (last_2.iloc[1]['Close'] > last_2.iloc[1]['MA20']) and (last_2.iloc[1]['OSC'] > 0)
 
         if kd_cross and trend_up:
-            return {"symbol": symbol.split('.')[0], "name": stock.info.get('shortName', symbol.split('.')[0]), "price": round(last_2.iloc[1]['Close'], 2)}
+            pure_sym = symbol.split('.')[0]
+            name = STOCK_DICT.get(pure_sym, stock.info.get('shortName', pure_sym))
+            return {"symbol": pure_sym, "name": name, "price": round(last_2.iloc[1]['Close'], 2)}
     except: pass
     return None
 
@@ -174,11 +188,11 @@ def predict():
         fun_data = {"eps": "--", "pe_ratio": "--"}
         try:
             info = stock.info
-            display_name = info.get('shortName', pure_symbol)
+            display_name = STOCK_DICT.get(pure_symbol, info.get('shortName', pure_symbol))
             eps, pe = info.get("trailingEps"), info.get("trailingPE")
             if eps: fun_data["eps"] = round(eps, 2)
             if pe: fun_data["pe_ratio"] = round(pe, 2)
-        except: display_name = pure_symbol
+        except: display_name = STOCK_DICT.get(pure_symbol, pure_symbol)
 
         chip_info, chip_chart_data, chip_table_data, foreign_data, trust_data = "無近期資料", [], [], [], []
         if interval == '1d':
@@ -203,15 +217,38 @@ def predict():
             except: pass
 
         tech_str = df[['Close', 'MA20', 'OSC', 'K', 'D']].tail(3).to_string()
+        last_row = df.iloc[-1]
 
+        # === 【終極本地備援大腦】 ===
+        # 若 AI 當機，這套量化邏輯會確保版面絕對有精準數據
+        fallback_signal = "震盪"
+        if last_row['K'] > last_row['D'] and last_row['Close'] > last_row['MA20']: fallback_signal = "偏多"
+        elif last_row['K'] < last_row['D'] and last_row['Close'] < last_row['MA20']: fallback_signal = "偏空"
+        
+        ai_data = {
+            "signal": fallback_signal, 
+            "pressure": str(round(last_row['BB_upper'], 2)), 
+            "support": str(round(last_row['BB_lower'], 2)), 
+            "stop_loss": str(round(last_row['MA20'], 2)), 
+            "prob_up": 45 if fallback_signal == "偏多" else 25, 
+            "prob_down": 25 if fallback_signal == "偏多" else 45, 
+            "prob_flat": 30,
+            "pattern_kline": "量化計算中", "pattern_trend": "量化計算中", "industry_desc": "台股上市櫃", "related_stocks": "同族群個股",
+            "scenario_up": {"price": str(round(last_row['BB_upper'], 2)), "action": "突破上軌可偏多操作"}, 
+            "scenario_flat": {"price": str(round(last_row['Close'], 2)), "action": "區間整理，高出低進"}, 
+            "scenario_down": {"price": str(round(last_row['MA20'], 2)), "action": "跌破月線請嚴格防守"},
+            "stars": 3, "advice": ["Google AI 連線逾時，已啟動本地量化備援大腦", "此為純技術指標推演，請搭配籌碼判斷"]
+        }
+
+        # 嘗試呼叫 AI
         prompt = (
             f"你是專業操盤手。分析 {display_name} ({pure_symbol})。\n"
             f"務必只輸出純 JSON，格式如下：\n"
             f"{{\n"
             f"  \"signal\": \"多/空/震盪\", \"pressure\": \"壓力價\", \"support\": \"支撐價\", \"stop_loss\": \"停損價\",\n"
             f"  \"prob_up\": 40, \"prob_down\": 30, \"prob_flat\": 30,\n"
-            f"  \"pattern_kline\": \"描述K線型態(10字內)\", \"pattern_trend\": \"描述均線(10字內)\",\n"
-            f"  \"industry_desc\": \"所屬產業(10字內)\", \"related_stocks\": \"概念股\",\n"
+            f"  \"pattern_kline\": \"K線(10字內)\", \"pattern_trend\": \"均線(10字內)\",\n"
+            f"  \"industry_desc\": \"產業(10字內)\", \"related_stocks\": \"概念股\",\n"
             f"  \"scenario_up\": {{\"price\": \"突破價\", \"action\": \"建議\"}},\n"
             f"  \"scenario_flat\": {{\"price\": \"震盪價\", \"action\": \"建議\"}},\n"
             f"  \"scenario_down\": {{\"price\": \"防守價\", \"action\": \"建議\"}}\n"
@@ -219,51 +256,49 @@ def predict():
             f"技術面：{tech_str}\n籌碼：{chip_info}"
         )
         
-        ai_data = {
-            "signal": "震盪", "pressure": "--", "support": "--", "stop_loss": "--", 
-            "prob_up": 33, "prob_down": 33, "prob_flat": 34,
-            "pattern_kline": "--", "pattern_trend": "--", "industry_desc": "--", "related_stocks": "--",
-            "scenario_up": {"price":"--", "action":"--"}, "scenario_flat": {"price":"--", "action":"--"}, "scenario_down": {"price":"--", "action":"--"}
-        }
+        try:
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.1))
+            text = response.text
+            match = re.search(r'\{[\s\S]*\}', text)
+            if match:
+                try:
+                    parsed = json.loads(match.group(0))
+                    # 覆蓋備援資料
+                    for k, v in parsed.items():
+                        if k in ai_data: ai_data[k] = v
+                except:
+                    # JSON 崩潰時的 Regex 終極暴力挖礦
+                    t = match.group(0)
+                    def ext_str(key, default): 
+                        m = re.search(f'"{key}"\s*:\s*"([^"]+)"', t)
+                        return m.group(1) if m else default
+                    def ext_int(key, default):
+                        m = re.search(f'"{key}"\s*:\s*(\d+)', t)
+                        return int(m.group(1)) if m else default
 
-        for model_name in ['gemini-1.5-flash']:
-            try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.1))
-                text = response.text
-                
-                # 【核心修復：終極 Regex 暴力萃取，無視任何 JSON 格式錯誤】
-                def ext_str(key): 
-                    m = re.search(f'"{key}"\s*:\s*"([^"]+)"', text)
-                    return m.group(1) if m else "--"
-                def ext_int(key):
-                    m = re.search(f'"{key}"\s*:\s*(\d+)', text)
-                    return int(m.group(1)) if m else 0
+                    ai_data["signal"] = ext_str("signal", ai_data["signal"])
+                    ai_data["pressure"] = ext_str("pressure", ai_data["pressure"])
+                    ai_data["support"] = ext_str("support", ai_data["support"])
+                    ai_data["stop_loss"] = ext_str("stop_loss", ai_data["stop_loss"])
+                    ai_data["pattern_kline"] = ext_str("pattern_kline", "等待表態")
+                    ai_data["pattern_trend"] = ext_str("pattern_trend", "均線整理")
+                    ai_data["industry_desc"] = ext_str("industry_desc", "台股重點板塊")
+                    ai_data["related_stocks"] = ext_str("related_stocks", "--")
+                    
+                    pu = ext_int("prob_up", 33); pd_ = ext_int("prob_down", 33); pf = ext_int("prob_flat", 34)
+                    if pu > 0 or pd_ > 0 or pf > 0:
+                        ai_data["prob_up"]=pu; ai_data["prob_down"]=pd_; ai_data["prob_flat"]=pf
 
-                ai_data["signal"] = ext_str("signal")
-                ai_data["pressure"] = ext_str("pressure")
-                ai_data["support"] = ext_str("support")
-                ai_data["stop_loss"] = ext_str("stop_loss")
-                ai_data["pattern_kline"] = ext_str("pattern_kline")
-                ai_data["pattern_trend"] = ext_str("pattern_trend")
-                ai_data["industry_desc"] = ext_str("industry_desc")
-                ai_data["related_stocks"] = ext_str("related_stocks")
-                
-                pu = ext_int("prob_up"); pd_ = ext_int("prob_down"); pf = ext_int("prob_flat")
-                if pu > 0 or pd_ > 0 or pf > 0:
-                    ai_data["prob_up"]=pu; ai_data["prob_down"]=pd_; ai_data["prob_flat"]=pf
-
-                # 萃取巢狀 JSON (劇本)
-                for sc in ["scenario_up", "scenario_flat", "scenario_down"]:
-                    m_sc = re.search(f'"{sc}"\s*:\s*{{([^}}]+)}}', text)
-                    if m_sc:
-                        in_text = m_sc.group(1)
-                        p_match = re.search(r'"price"\s*:\s*"([^"]+)"', in_text)
-                        a_match = re.search(r'"action"\s*:\s*"([^"]+)"', in_text)
-                        if p_match: ai_data[sc]["price"] = p_match.group(1)
-                        if a_match: ai_data[sc]["action"] = a_match.group(1)
-                break
-            except Exception as e: print(f"[{model_name}] 失敗", e)
+                    for sc in ["scenario_up", "scenario_flat", "scenario_down"]:
+                        m_sc = re.search(f'"{sc}"\s*:\s*{{([^}}]+)}}', t)
+                        if m_sc:
+                            in_text = m_sc.group(1)
+                            p_match = re.search(r'"price"\s*:\s*"([^"]+)"', in_text)
+                            a_match = re.search(r'"action"\s*:\s*"([^"]+)"', in_text)
+                            if p_match: ai_data[sc]["price"] = p_match.group(1)
+                            if a_match: ai_data[sc]["action"] = a_match.group(1)
+        except Exception as e: print("AI 解析失敗，使用備援資料", e)
 
         return jsonify({
             "status": "success", "symbol": symbol, "current_price": current_price, "interval": interval,
@@ -273,6 +308,7 @@ def predict():
             "chip_table": chip_table_data, "fundamental": fun_data, "ai_analysis": ai_data
         })
     except Exception as e:
+        print(traceback.format_exc())
         return jsonify({"status": "error", "message": f"伺服器錯誤: {str(e)}"}), 500
 
 if __name__ == "__main__":
