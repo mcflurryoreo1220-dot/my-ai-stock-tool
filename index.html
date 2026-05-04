@@ -3,277 +3,288 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 股票戰情室 - 旗艦視覺版</title>
+    <title>AI 股票戰情室 - 高密度旗艦版</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         :root { 
             --bg-dark: #020617; --panel-bg: #0a1128; --border-color: #1e3a8a; 
             --text-main: #e2e8f0; --text-muted: #94a3b8; 
             --blue: #3b82f6; --cyan: #06b6d4; --red: #ef4444; --green: #10b981; --orange: #f59e0b; 
-            --ma5: #fde047; --ma20: #f43f5e; --ma60: #06b6d4; 
-            --bb: rgba(255,255,255,0.2); --bb-bg: rgba(255,255,255,0.05);
-            --foreign: #fde047; --trust: #f43f5e;
+            --ma5: #fde047; --ma20: #f43f5e; --ma60: #06b6d4; --foreign: #fde047; --trust: #f43f5e;
         }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-dark); color: var(--text-main); margin: 0; padding: 15px; }
+        /* 強制鎖死全螢幕，取消系統滾動條 */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-dark); color: var(--text-main); margin: 0; padding: 8px; height: 100vh; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; }
         
-        .top-bar { display: flex; justify-content: space-between; align-items: center; background: var(--panel-bg); padding: 15px 20px; border-radius: 6px; border: 1px solid var(--border-color); margin-bottom: 15px; box-shadow: 0 0 10px rgba(30,58,138,0.3); }
-        .search-group { display: flex; gap: 10px; align-items: center; }
-        input[type="text"], input[type="number"], select { padding: 10px; background: #020617; border: 1px solid var(--border-color); color: white; border-radius: 4px; outline: none; font-weight: bold; }
-        button { padding: 10px 20px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; transition: 0.2s; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+        /* 美化滾動條 (預防小螢幕仍需微調時的質感) */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: var(--bg-dark); }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+
+        .top-bar { flex: 0 0 45px; display: flex; justify-content: space-between; align-items: center; background: var(--panel-bg); padding: 0 15px; border-radius: 4px; border: 1px solid var(--border-color); margin-bottom: 8px; box-shadow: 0 0 10px rgba(30,58,138,0.3); }
+        .search-group { display: flex; gap: 8px; align-items: center; }
+        input[type="text"], input[type="number"], select { padding: 6px 10px; background: #020617; border: 1px solid var(--border-color); color: white; border-radius: 4px; outline: none; font-weight: bold; font-size: 13px; }
+        button { padding: 6px 15px; border: none; border-radius: 4px; font-weight: bold; font-size: 13px; cursor: pointer; color: white; transition: 0.2s; }
         .btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); border: 1px solid #3b82f6; } .btn-primary:hover { background: #1e40af; }
         .btn-radar { background: linear-gradient(135deg, #7c3aed, #5b21b6); border: 1px solid #8b5cf6; } .btn-radar:hover { background: #4c1d95; }
         button:disabled { background: var(--border-color); color: var(--text-muted); border: none; cursor: not-allowed; }
         
-        .price-zone { display: none; align-items: baseline; gap: 15px; }
-        .current-price { font-size: 36px; font-weight: bold; color: var(--red); text-shadow: 0 0 10px rgba(239,68,68,0.4); }
+        .price-zone { display: none; align-items: center; gap: 12px; }
+        .current-price { font-size: 26px; font-weight: bold; color: var(--red); text-shadow: 0 0 8px rgba(239,68,68,0.4); margin-bottom: 2px;}
         
-        .main-grid { display: grid; grid-template-columns: 5fr 3fr 3fr; gap: 15px; display: none; }
-        .column { display: flex; flex-direction: column; gap: 15px; }
+        /* 高密度三欄網格 */
+        .main-grid { flex: 1; display: grid; grid-template-columns: 14fr 9fr 12fr; gap: 8px; overflow: hidden; display: none; }
+        .column { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding-right: 2px; }
         
-        .chart-wrapper { background: var(--panel-bg); padding: 5px; border-radius: 6px; border: 1px solid var(--border-color); box-shadow: inset 0 0 15px rgba(0,0,0,0.5); }
+        /* 圖表區極致壓縮 */
+        .chart-wrapper { background: var(--panel-bg); padding: 4px; border-radius: 4px; border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 2px; }
         .chart-box { position: relative; width: 100%; border-bottom: 1px solid #172554; }
         .chart-box:last-child { border-bottom: none; }
-        .chart-title { position: absolute; z-index: 2; padding: 4px 8px; font-size: 11px; background: rgba(2,6,23,0.8); color: var(--cyan); border: 1px solid #1e3a8a; top: 5px; left: 5px; display: flex; gap: 10px; align-items: center; border-radius: 4px; }
+        .chart-title { position: absolute; z-index: 2; padding: 2px 6px; font-size: 10px; background: rgba(2,6,23,0.8); color: var(--cyan); border: 1px solid #1e3a8a; top: 4px; left: 4px; display: flex; gap: 8px; align-items: center; border-radius: 2px; }
         .legend-ma5 { color: var(--ma5); } .legend-ma20 { color: var(--ma20); } .legend-ma60 { color: var(--ma60); }
         .legend-bb { color: var(--text-main); }
         .legend-for { color: var(--foreign); } .legend-tru { color: var(--trust); }
-        .chart-legend { position: absolute; z-index: 10; font-size: 13px; color: #fff; background: rgba(2,6,23,0.9); border-radius: 4px; top: 35px; left: 5px; padding: 6px; display: none; border: 1px solid var(--cyan); box-shadow: 0 0 10px rgba(6,182,212,0.3); }
+        .chart-legend { position: absolute; z-index: 10; font-size: 11px; color: #fff; background: rgba(2,6,23,0.9); border-radius: 4px; top: 25px; left: 4px; padding: 4px; display: none; border: 1px solid var(--cyan); }
         
-        #mainChart { height: 420px; } .sub-chart { height: 120px; }
-        #chipChart { height: 140px; }
+        /* 精準控制圖表高度，確保不出現滾動條 */
+        #mainChart { height: 330px; } .sub-chart { height: 95px; } #chipChart { height: 110px; }
         
-        .info-card { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 6px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        .card-header { font-size: 14px; font-weight: bold; color: var(--cyan); border-bottom: 1px solid var(--border-color); padding-bottom: 8px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+        /* 資訊卡片高密度化 */
+        .info-card { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; }
+        .card-header { font-size: 12px; font-weight: bold; color: var(--cyan); border-bottom: 1px solid var(--border-color); padding-bottom: 4px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;}
         
-        .scenario-grid { display: flex; flex-direction: column; gap: 8px; }
-        .scenario-box { background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 10px; display: flex; justify-content: space-between; align-items: center; }
-        .scenario-box .lbl { font-size: 13px; font-weight: bold; display: flex; align-items: center; gap: 6px; }
-        .scenario-box .act { font-size: 13px; color: var(--text-main); text-align: right; }
+        /* 劇本推演 */
+        .scenario-grid { display: flex; flex-direction: column; gap: 5px; }
+        .scenario-box { background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 6px 8px; display: flex; justify-content: space-between; align-items: center; }
+        .scenario-box .lbl { font-size: 11px; font-weight: bold; }
+        .scenario-box .act { font-size: 11px; color: var(--text-main); text-align: right; line-height: 1.2;}
         .s-up .lbl { color: var(--red); } .s-flat .lbl { color: var(--orange); } .s-down .lbl { color: var(--green); }
 
-        .pattern-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
-        .pattern-item { background: #020617; border-left: 3px solid var(--cyan); padding: 8px 12px; border-radius: 0 4px 4px 0; }
-        .pattern-lbl { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
-        .pattern-val { font-size: 14px; font-weight: bold; color: white; }
-        .industry-box { background: #020617; border: 1px dashed var(--blue); padding: 10px; border-radius: 4px; margin-top: 10px; }
-        .industry-link { color: var(--cyan); font-size: 13px; margin-top: 6px; line-height: 1.5; font-weight: bold; }
+        /* 技術總覽表格 */
+        .tech-table, .chip-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: center; }
+        .tech-table th, .chip-table th { background: #020617; padding: 4px; color: var(--text-muted); border-bottom: 1px solid var(--border-color); font-weight: normal; }
+        .tech-table td, .chip-table td { padding: 5px 4px; border-bottom: 1px solid #0f172a; }
+        .tech-table td:first-child { text-align: left; color: var(--text-muted); }
+        .tech-table td:last-child { text-align: left; }
+        .status-up { color: var(--red); font-weight: bold; } .status-down { color: var(--green); font-weight: bold; } .status-flat { color: var(--orange); font-weight: bold; }
 
-        .f-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .f-item { background: #020617; padding: 10px; border-radius: 4px; text-align: center; border: 1px solid #1e293b; }
-        .f-label { font-size: 11px; color: var(--text-muted); }
-        .f-val { font-size: 18px; font-weight: bold; color: white; margin-top: 5px; }
-        .stars { color: var(--orange); font-size: 22px; letter-spacing: 2px; text-shadow: 0 0 5px rgba(245,158,11,0.5); }
+        /* 雙儀表板並排 (勝率 + 機率) */
+        .ai-quant-row { display: flex; gap: 8px; }
+        .ai-quant-box { flex: 1; background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
         
-        .chip-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; }
-        .chip-table th { background: #020617; padding: 8px; color: var(--cyan); border-bottom: 1px solid var(--border-color); font-weight: bold; }
-        .chip-table td { padding: 8px; border-bottom: 1px solid #0f172a; }
-        .txt-red { color: var(--red); } .txt-green { color: var(--green); }
+        /* 縮小的 Gauge */
+        .gauge-arc { width: 100px; height: 50px; border-radius: 100px 100px 0 0; background: conic-gradient(from 270deg, var(--red) 0% 50%, var(--green) 50% 100%); position: relative; }
+        .gauge-arc::after { content: ''; position: absolute; bottom: 0; left: 15px; width: 70px; height: 35px; background: #020617; border-radius: 70px 70px 0 0; }
+        .gauge-needle { position: absolute; bottom: 10px; left: 50%; width: 3px; height: 45px; background: white; transform-origin: bottom center; transform: rotate(-90deg); transition: transform 1s ease-out; border-radius: 2px; }
+        .gauge-text { position: absolute; bottom: 8px; font-size: 16px; font-weight: bold; color: white; z-index: 10; }
+        .gauge-label { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
 
-        .tech-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 15px; }
-        .tech-table th { background: #020617; padding: 6px; color: var(--text-muted); border-bottom: 1px solid var(--border-color); text-align: left; }
-        .tech-table td { padding: 8px 6px; border-bottom: 1px solid #0f172a; }
-        .status-up { color: var(--red); font-weight: bold; }
-        .status-down { color: var(--green); font-weight: bold; }
-        .status-flat { color: var(--orange); font-weight: bold; }
+        /* 縮小的 Donut */
+        .donut-wrap { display: flex; align-items: center; gap: 10px; width: 100%; justify-content: center;}
+        .donut-chart { width: 60px; height: 60px; border-radius: 50%; background: conic-gradient(var(--red) 0% 33%, var(--green) 33% 66%, var(--orange) 66% 100%); position: relative; display: flex; justify-content: center; align-items: center; }
+        .donut-inner { width: 38px; height: 38px; border-radius: 50%; background: #020617; position: absolute; display: flex; justify-content: center; align-items: center; font-size: 9px; font-weight: bold; color: var(--text-muted); }
+        .donut-legend { display: flex; flex-direction: column; gap: 4px; font-size: 10px; }
+        .d-leg-item { display: flex; align-items: center; gap: 4px; }
+        .d-dot { width: 8px; height: 8px; border-radius: 2px; }
 
-        .gauge-container { display: flex; flex-direction: column; align-items: center; justify-content: center; background: #020617; border: 1px solid var(--border-color); border-radius: 6px; padding: 15px; position: relative; overflow: hidden; }
-        .gauge-arc { width: 160px; height: 80px; border-radius: 160px 160px 0 0; background: conic-gradient(from 270deg, var(--red) 0% 50%, var(--green) 50% 100%); position: relative; }
-        .gauge-arc::after { content: ''; position: absolute; bottom: 0; left: 20px; width: 120px; height: 60px; background: #020617; border-radius: 120px 120px 0 0; }
-        .gauge-needle { position: absolute; bottom: 15px; left: 50%; width: 4px; height: 70px; background: white; transform-origin: bottom center; transform: rotate(-90deg); transition: transform 1s ease-out; border-radius: 4px; box-shadow: 0 0 5px rgba(255,255,255,0.5); }
-        .gauge-text { position: absolute; bottom: 10px; font-size: 24px; font-weight: bold; color: white; z-index: 10; }
-        .gauge-label { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
+        /* 其他資訊方塊 */
+        .pattern-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+        .pattern-item { background: #020617; border-left: 2px solid var(--cyan); padding: 4px 8px; border-radius: 0 4px 4px 0; }
+        .pattern-lbl { font-size: 10px; color: var(--text-muted); }
+        .pattern-val { font-size: 12px; font-weight: bold; color: white; margin-top:2px; }
+        .industry-box { background: #020617; border: 1px dashed var(--blue); padding: 6px; border-radius: 4px; }
+        .industry-link { color: var(--cyan); font-size: 11px; margin-top: 4px; font-weight: bold; }
 
-        .donut-container { display: flex; align-items: center; justify-content: space-around; background: #020617; border: 1px solid var(--border-color); border-radius: 6px; padding: 15px; }
-        .donut-chart { width: 100px; height: 100px; border-radius: 50%; background: conic-gradient(var(--red) 0% 33%, var(--green) 33% 66%, var(--orange) 66% 100%); position: relative; display: flex; justify-content: center; align-items: center; }
-        .donut-inner { width: 65px; height: 65px; border-radius: 50%; background: #020617; position: absolute; display: flex; justify-content: center; align-items: center; font-size: 12px; font-weight: bold; color: var(--text-muted); text-align: center; line-height: 1.2;}
-        .donut-legend { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
-        .d-leg-item { display: flex; align-items: center; gap: 6px; }
-        .d-dot { width: 12px; height: 12px; border-radius: 3px; }
+        .f-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        .f-item { background: #020617; padding: 6px; border-radius: 4px; text-align: center; border: 1px solid #1e293b; }
+        .f-label { font-size: 10px; color: var(--text-muted); margin-bottom: 2px; }
+        .f-val { font-size: 14px; font-weight: bold; color: white; }
 
-        #sysMessage { margin-bottom: 15px; font-size: 14px; color: var(--cyan); }
-        .advice-list li { margin-bottom: 8px; }
+        /* 估值與資控 */
+        .slider-row { margin-bottom: 8px; }
+        .slider-row div { display: flex; justify-content: space-between; margin-bottom: 2px; font-size: 11px; }
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; margin: 4px 0; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 12px; width: 12px; border-radius: 50%; background: var(--cyan); cursor: pointer; margin-top: -4px; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; background: var(--border-color); border-radius: 2px; }
+        .result-box { background:#020617; padding:8px; border-radius:4px; text-align:center; border: 1px solid var(--border-color); }
+        
+        .advice-list { margin: 0; padding-left: 16px; font-size: 11px; color: #a5d6a7; line-height: 1.4; }
+        .advice-list li { margin-bottom: 4px; }
 
+        /* 緊湊型模擬倉 */
+        .pf-dashboard { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 6px; }
+        .pf-box { background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 6px; text-align: center; }
+        .pf-box .lbl { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
+        .pf-box .val { font-size: 14px; font-weight: bold; color: white; font-family: monospace; }
+        .pf-table-wrapper { flex: 1; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 4px; background: #020617; }
+        .pf-table th { position: sticky; top: 0; background: var(--panel-bg); font-size: 10px; z-index: 1;}
+        .pf-table td { font-size: 11px; padding: 4px; }
+
+        /* 系統訊息列 */
+        #sysMessage { font-size: 12px; color: var(--cyan); position: absolute; top: 15px; left: 50%; transform: translateX(-50%); font-weight: bold;}
+        
+        /* Modal 保留 */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: none; justify-content: center; align-items: center; }
-        .modal-content { background: var(--panel-bg); border: 1px solid var(--blue); border-radius: 8px; width: 400px; padding: 20px; box-shadow: 0 0 20px rgba(41, 98, 255, 0.3); }
-        .modal-header { font-size: 18px; font-weight: bold; color: white; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
-        .radar-list { list-style: none; padding: 0; margin: 0; max-height: 300px; overflow-y: auto; }
-        .radar-item { background: #0b0e14; margin-bottom: 8px; padding: 12px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border-color); cursor: pointer; transition: 0.2s; }
-        .radar-item:hover { border-color: var(--blue); }
-        .radar-empty { text-align: center; color: var(--text-muted); padding: 20px; }
-        .pf-dashboard { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 15px; }
-        .pf-box { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 6px; padding: 15px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        .pf-box .lbl { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
-        .pf-box .val { font-size: 24px; font-weight: bold; color: white; font-family: monospace; }
-        .pf-table-wrapper { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 6px; padding: 15px; }
-        .pf-table { width: 100%; border-collapse: collapse; text-align: center; font-size: 14px; }
-        .pf-table th { border-bottom: 1px solid var(--border-color); padding: 10px; color: var(--cyan); font-weight: bold; }
-        .pf-table td { border-bottom: 1px solid #0f172a; padding: 12px 10px; }
+        .modal-content { background: var(--panel-bg); border: 1px solid var(--blue); border-radius: 8px; width: 350px; padding: 15px; }
+        .modal-header { font-size: 16px; font-weight: bold; color: white; margin-bottom: 10px; display: flex; justify-content: space-between; }
+        .radar-list { list-style: none; padding: 0; margin: 0; max-height: 250px; overflow-y: auto; }
+        .radar-item { background: #0b0e14; margin-bottom: 6px; padding: 10px; border-radius: 4px; display: flex; justify-content: space-between; border: 1px solid var(--border-color); cursor: pointer; }
+        .radar-item:hover { border-color: var(--cyan); }
+        .txt-red { color: var(--red); } .txt-green { color: var(--green); }
     </style>
 </head>
 <body>
     <div class="modal-overlay" id="radarModal">
         <div class="modal-content">
-            <div class="modal-header">
-                <span>📡 嚴選雷達掃描結果</span>
-                <button style="background:transparent; border:none; color:var(--text-muted); font-size:20px; padding:0; cursor:pointer;" onclick="closeRadar()">×</button>
-            </div>
-            <div style="font-size:12px; color:var(--text-muted); margin-bottom:15px;">以下標的於今日符合「KD金叉 + 站上月線 + MACD翻紅」：</div>
-            <ul class="radar-list" id="radarList"><div class="radar-empty">掃描中...</div></ul>
+            <div class="modal-header"><span>📡 選股雷達掃描</span><button style="background:none;border:none;color:gray;cursor:pointer;" onclick="closeRadar()">×</button></div>
+            <ul class="radar-list" id="radarList"><div style="text-align:center;color:gray;padding:10px;">掃描中...</div></ul>
         </div>
     </div>
 
     <div class="top-bar">
         <div class="search-group">
-            <button class="btn-radar" onclick="startRadar()">📡 啟動選股雷達</button>
-            <div style="width: 1px; height: 30px; background: var(--border-color); margin: 0 10px;"></div>
-            <input type="text" id="symbol" value="3661" placeholder="輸入代碼">
+            <button class="btn-radar" onclick="startRadar()">📡 雷達</button>
+            <div style="width: 1px; height: 20px; background: var(--border-color); margin: 0 5px;"></div>
+            <input type="text" id="symbol" value="3661" placeholder="代碼" style="width: 80px;">
             <select id="intervalSelector">
-                <option value="1d" selected>日K線</option><option value="60m">60分K</option><option value="15m">15分K</option><option value="5m">5分K</option><option value="1m">1分K</option>
+                <option value="1d" selected>日K</option><option value="60m">60分</option><option value="15m">15分</option><option value="5m">5分</option><option value="1m">1分</option>
             </select>
-            <button class="btn-primary" id="analyzeBtn" onclick="analyze()">⚡ 啟動專業終端分析</button>
+            <button class="btn-primary" id="analyzeBtn" onclick="analyze()">⚡ 啟動終端</button>
         </div>
+        <div id="sysMessage"></div>
         <div class="price-zone" id="priceZone">
-            <div id="stockTitle" style="font-weight:bold; font-size:28px; letter-spacing: 2px;">--</div>
+            <div style="display:flex; align-items: baseline; gap:8px;">
+                <span id="stockTitle" style="font-weight:bold; font-size:20px; letter-spacing:1px; color:white;">--</span>
+                <span id="ai-signal" style="font-size:14px; font-weight:bold; padding:2px 6px; border-radius:4px; background:rgba(255,255,255,0.1);">--</span>
+            </div>
             <div class="current-price" id="currentPriceDisplay">0.00</div>
-            <button style="background:var(--orange); font-size:13px; padding:8px 15px; border-radius:4px; box-shadow: 0 0 10px rgba(245,158,11,0.4); border:none;" onclick="buyStock()">+ 加入模擬倉</button>
+            <button style="background:var(--orange); font-size:12px; padding:6px 10px; border-radius:4px;" onclick="buyStock()">+ 模擬倉</button>
         </div>
     </div>
     
-    <div id="sysMessage"></div>
-    
     <div class="main-grid" id="mainGrid">
+        <!-- 左欄 (41%)：極致圖表區 -->
         <div class="column">
             <div class="chart-wrapper">
                 <div class="chart-box">
                     <div class="chart-title">
-                        <span id="mainChartTitle">技術面分析 (日K線)</span>
-                        <span class="legend-ma5" id="l-ma5">MA5: --</span><span class="legend-ma20" id="l-ma20">MA20: --</span><span class="legend-ma60" id="l-ma60">MA60: --</span>
-                        <span class="legend-bb" id="l-bb">通道上軌: --</span>
+                        <span id="mainChartTitle">技術面分析</span>
+                        <span class="legend-ma5" id="l-ma5">M5:--</span><span class="legend-ma20" id="l-ma20">M20:--</span><span class="legend-ma60" id="l-ma60">M60:--</span>
+                        <span class="legend-bb" id="l-bb">上軌:--</span>
                     </div>
                     <div class="chart-legend" id="chartLegend"></div><div id="mainChart"></div>
                 </div>
-                <div class="chart-box"><div class="chart-title">MACD (12,26,9)</div><div id="macdChart" class="sub-chart"></div></div>
+                <div class="chart-box"><div class="chart-title">MACD</div><div id="macdChart" class="sub-chart"></div></div>
                 <div class="chart-box"><div class="chart-title">KD (9,3,3)</div><div id="kdChart" class="sub-chart"></div></div>
-                <div class="chart-box" id="chipBox">
-                    <div class="chart-title">
-                        <span>籌碼面分析 (三大法人)</span>
-                        <span class="legend-for" id="l-for">外資: --</span><span class="legend-tru" id="l-tru">投信: --</span>
-                    </div>
+                <div class="chart-box" id="chipBox" style="border:none;">
+                    <div class="chart-title">三大法人 <span class="legend-for" id="l-for">外:--</span><span class="legend-tru" id="l-tru">投:--</span></div>
                     <div id="chipChart" class="sub-chart"></div>
                 </div>
             </div>
-            
-            <div class="info-card">
-                <div class="card-header">📋 技術指標總覽</div>
+        </div>
+        
+        <!-- 中欄 (26%)：數據表格與情境 -->
+        <div class="column">
+            <div class="info-card" style="padding: 6px;">
+                <div class="card-header" style="margin-bottom: 4px;">📋 指標狀態總覽</div>
                 <table class="tech-table">
-                    <thead><tr><th>指標</th><th>狀態</th><th>說明</th></tr></thead>
                     <tbody id="techTableBody">
-                        <tr><td>KD (9,3,3)</td><td id="t-kd-s">--</td><td id="t-kd-d">--</td></tr>
+                        <tr><td>KD</td><td id="t-kd-s">--</td><td id="t-kd-d">--</td></tr>
                         <tr><td>MACD</td><td id="t-macd-s">--</td><td id="t-macd-d">--</td></tr>
-                        <tr><td>均線排列</td><td id="t-ma-s">--</td><td id="t-ma-d">--</td></tr>
-                        <tr><td>布林通道</td><td id="t-bb-s">--</td><td id="t-bb-d">--</td></tr>
+                        <tr><td>均線</td><td id="t-ma-s">--</td><td id="t-ma-d">--</td></tr>
+                        <tr><td>布林</td><td id="t-bb-s">--</td><td id="t-bb-d">--</td></tr>
                     </tbody>
                 </table>
             </div>
-        </div>
-        
-        <div class="column">
-            <div class="info-card">
-                <div class="card-header">📊 隔日操作劇本推演</div>
+
+            <div class="info-card" style="padding: 6px;">
+                <div class="card-header" style="margin-bottom: 4px;">📊 劇本推演</div>
                 <div class="scenario-grid">
-                    <div class="scenario-box s-up">
-                        <div class="lbl">① 向上突破</div><div class="act"><div id="s-up-p" style="font-weight:bold;font-size:15px;">--</div><div id="s-up-a">--</div></div>
-                    </div>
-                    <div class="scenario-box s-flat">
-                        <div class="lbl">② 震盪整理</div><div class="act"><div id="s-flat-p" style="font-weight:bold;font-size:15px;">--</div><div id="s-flat-a">--</div></div>
-                    </div>
-                    <div class="scenario-box s-down">
-                        <div class="lbl">③ 跌破回測</div><div class="act"><div id="s-down-p" style="font-weight:bold;font-size:15px;">--</div><div id="s-down-a">--</div></div>
-                    </div>
+                    <div class="scenario-box s-up"><div class="lbl">① 突破</div><div class="act"><span id="s-up-p" style="font-weight:bold;">--</span><br><span id="s-up-a" style="font-size:10px;">--</span></div></div>
+                    <div class="scenario-box s-flat"><div class="lbl">② 震盪</div><div class="act"><span id="s-flat-p" style="font-weight:bold;">--</span><br><span id="s-flat-a" style="font-size:10px;">--</span></div></div>
+                    <div class="scenario-box s-down"><div class="lbl">③ 跌破</div><div class="act"><span id="s-down-p" style="font-weight:bold;">--</span><br><span id="s-down-a" style="font-size:10px;">--</span></div></div>
                 </div>
             </div>
 
-            <div class="info-card">
-                <div class="card-header">⏱️ 短線量化勝率 (嚴選濾網)</div>
-                <div class="gauge-container">
-                    <div class="gauge-arc" id="gaugeArc"></div>
-                    <div class="gauge-needle" id="gaugeNeedle"></div>
-                    <div class="gauge-text" id="gaugeText">0%</div>
-                    <div class="gauge-label" id="gaugeLabel">等待計算...</div>
-                </div>
+            <div class="info-card" id="chipTableCard" style="padding: 6px;">
+                <div class="card-header" style="margin-bottom: 4px;">🏦 法人近 10 日(張)</div>
+                <table class="chip-table"><thead><tr><th>日期</th><th>外</th><th>投</th><th>自</th><th>計</th></tr></thead><tbody id="chipTableBody"></tbody></table>
             </div>
 
-            <div class="info-card" id="chipTableCard">
-                <div class="card-header">🏦 三大法人近 10 日動向 (張)</div>
-                <table class="chip-table"><thead><tr><th>日期</th><th>外資</th><th>投信</th><th>自營</th><th>合計</th></tr></thead><tbody id="chipTableBody"></tbody></table>
+            <div class="info-card" style="border-color: var(--blue); padding: 8px;">
+                <div class="card-header" style="color: var(--blue); margin-bottom: 4px;">📈 估值計算機</div>
+                <div class="slider-row"><div><span>預估 EPS</span><span id="calc-eps-val" style="color:#fff">0.00</span></div><input type="range" id="slider-eps" min="0" max="150" step="0.5" value="0" oninput="updateCalc()"></div>
+                <div class="slider-row"><div><span>目標 PE</span><span id="calc-pe-val" style="color:#fff">15.0</span></div><input type="range" id="slider-pe" min="5" max="80" step="1" value="15" oninput="updateCalc()"></div>
+                <div class="result-box">
+                    <div id="calc-result" style="font-size:18px; font-weight:bold; color:var(--cyan); font-family:monospace;">--</div>
+                    <div id="calc-status" style="font-size:10px; margin-top:2px;">--</div>
+                </div>
             </div>
         </div>
 
+        <!-- 右欄 (33%)：AI預測、資控與模擬倉 -->
         <div class="column">
-            <div class="info-card">
-                <div class="card-header">🎯 明日漲跌機率預測 (AI)</div>
-                <div class="donut-container">
-                    <div class="donut-chart" id="donutChart">
-                        <div class="donut-inner">AI<br>演算</div>
+            <!-- 雙儀表板並排 -->
+            <div class="ai-quant-row">
+                <div class="ai-quant-box" style="border-color: var(--red);">
+                    <div style="font-size:11px; color:var(--red); font-weight:bold; margin-bottom:6px; position:absolute; top:4px; left:6px;">嚴選勝率</div>
+                    <div class="gauge-container" style="padding:0; border:none; margin-top:15px;">
+                        <div class="gauge-arc" id="gaugeArc"></div><div class="gauge-needle" id="gaugeNeedle"></div>
+                        <div class="gauge-text" id="gaugeText">0%</div><div class="gauge-label" id="gaugeLabel">等待計算</div>
                     </div>
-                    <div class="donut-legend">
-                        <div class="d-leg-item"><div class="d-dot" style="background:var(--red);"></div>上漲機率: <span id="p-up" style="font-weight:bold;color:white;">--%</span></div>
-                        <div class="d-leg-item"><div class="d-dot" style="background:var(--orange);"></div>震盪機率: <span id="p-flat" style="font-weight:bold;color:white;">--%</span></div>
-                        <div class="d-leg-item"><div class="d-dot" style="background:var(--green);"></div>下跌機率: <span id="p-down" style="font-weight:bold;color:white;">--%</span></div>
+                </div>
+                <div class="ai-quant-box" style="border-color: var(--cyan);">
+                    <div style="font-size:11px; color:var(--cyan); font-weight:bold; margin-bottom:6px; position:absolute; top:4px; left:6px;">明日AI機率</div>
+                    <div class="donut-wrap" style="margin-top:15px;">
+                        <div class="donut-chart" id="donutChart"><div class="donut-inner">AI</div></div>
+                        <div class="donut-legend">
+                            <div class="d-leg-item"><div class="d-dot" style="background:var(--red);"></div>漲 <span id="p-up" style="color:white;">--%</span></div>
+                            <div class="d-leg-item"><div class="d-dot" style="background:var(--orange);"></div>盤 <span id="p-flat" style="color:white;">--%</span></div>
+                            <div class="d-leg-item"><div class="d-dot" style="background:var(--green);"></div>跌 <span id="p-down" style="color:white;">--%</span></div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div class="info-card">
-                <div class="card-header">🧠 產業概況與型態分析</div>
-                <div class="pattern-grid">
-                    <div class="pattern-item"><div class="pattern-lbl">K線型態</div><div class="pattern-val" id="ai-pattern-k">--</div></div>
-                    <div class="pattern-item"><div class="pattern-lbl">均線趨勢</div><div class="pattern-val" id="ai-pattern-t">--</div></div>
+            <!-- 型態與防守合併 -->
+            <div class="info-card" style="padding: 8px;">
+                <div class="f-grid" style="margin-bottom: 6px;">
+                    <div class="f-item"><div class="f-label">型態與均線</div><div class="f-val" id="ai-pattern-k" style="font-size:12px;">--</div></div>
+                    <div class="f-item"><div class="f-label">支撐防守區</div><div class="f-val" id="ai-support" style="color:var(--red); font-size:14px;">--</div></div>
                 </div>
                 <div class="industry-box">
-                    <div style="font-size:12px; color:var(--text-muted);">所屬產業鏈</div>
-                    <div style="font-size:15px; font-weight:bold; color:white;" id="ai-industry">--</div>
-                    <div style="margin-top: 8px; font-size:12px; color:var(--text-muted);">美台連動指標概念股：</div>
+                    <div style="font-size:10px; color:var(--text-muted); display:flex; justify-content:space-between;"><span>產業鏈: <b id="ai-industry" style="color:white;">--</b></span><span>壓力: <b id="ai-pressure" style="color:var(--green);">--</b></span></div>
                     <div class="industry-link" id="ai-related">--</div>
                 </div>
             </div>
-
-            <div class="info-card">
-                <div class="card-header">🎯 短線關鍵價位</div>
-                <div class="f-grid">
-                    <div class="f-item"><div class="f-label">壓力區 (停利)</div><div class="f-val" id="ai-pressure" style="color:var(--green)">--</div></div>
-                    <div class="f-item"><div class="f-label">支撐區 (防守)</div><div class="f-val" id="ai-support" style="color:var(--red)">--</div></div>
-                </div>
-            </div>
             
-            <div class="info-card" style="border-color: var(--green);">
-                <div class="card-header" style="color: var(--green);">🛡️ 資金安全控管 (單筆)</div>
-                <div style="display:flex; gap:10px; margin-bottom: 10px;">
-                    <div style="flex:1;"><div style="font-size:11px; color:var(--text-muted); margin-bottom:4px;">停損參考價</div><input type="number" id="risk-stop-loss" value="0" step="0.5" style="width:100%; box-sizing:border-box; padding:6px; text-align:center;" oninput="updateRiskCalc()"></div>
-                    <div style="flex:1;"><div style="font-size:11px; color:var(--text-muted); margin-bottom:4px;">最高可承虧損</div><input type="number" id="risk-max-loss" value="5000" step="1000" style="width:100%; box-sizing:border-box; padding:6px; text-align:center;" oninput="updateRiskCalc()"></div>
-                </div>
-                <div style="background:#020617; padding:10px; border-radius:4px; text-align:center; border: 1px solid var(--border-color);">
-                    <div style="font-size:12px; color:var(--text-muted);">安全進場上限</div>
-                    <div id="risk-result" style="font-size:22px; font-weight:bold; color:var(--green); font-family:monospace;">0 張</div>
+            <!-- 單筆資控 -->
+            <div class="info-card" style="border-color: var(--green); padding: 8px;">
+                <div style="display:flex; gap:8px; margin-bottom: 6px;">
+                    <div style="flex:1;"><div style="font-size:10px; color:var(--text-muted); margin-bottom:2px;">停損參考價</div><input type="number" id="risk-stop-loss" value="0" step="0.5" style="width:100%; box-sizing:border-box; padding:4px; font-size:12px; text-align:center;" oninput="updateRiskCalc()"></div>
+                    <div style="flex:1;"><div style="font-size:10px; color:var(--text-muted); margin-bottom:2px;">可承虧損</div><input type="number" id="risk-max-loss" value="5000" step="1000" style="width:100%; box-sizing:border-box; padding:4px; font-size:12px; text-align:center;" oninput="updateRiskCalc()"></div>
+                    <div class="result-box" style="flex:1; display:flex; flex-direction:column; justify-content:center;">
+                        <div style="font-size:10px; color:var(--text-muted);">可買張數</div>
+                        <div id="risk-result" style="font-size:14px; font-weight:bold; color:var(--green);">0 張</div>
+                    </div>
                 </div>
             </div>
-        </div>
-    </div>
 
-    <!-- 模擬倉保留 -->
-    <div style="margin-top: 30px;">
-        <h3 style="color:var(--cyan); margin-bottom:15px; border-left: 4px solid var(--cyan); padding-left: 10px;">🏦 帳戶總動能看板</h3>
-        <div class="pf-dashboard">
-            <div class="pf-box"><div class="lbl">總投入本金 (元)</div><div class="val" id="pf-cost">0</div></div>
-            <div class="pf-box"><div class="lbl">目前總市值 (元)</div><div class="val" id="pf-value">0</div></div>
-            <div class="pf-box"><div class="lbl">總損益金額 (元)</div><div class="val" id="pf-pnl-amt">0</div></div>
-            <div class="pf-box" style="border-color:var(--cyan); box-shadow: 0 0 10px rgba(6,182,212,0.2);"><div class="lbl">總報酬率 (%)</div><div class="val" id="pf-pnl-pct" style="color:var(--cyan);">0.00%</div></div>
-        </div>
-        <div class="pf-table-wrapper">
-            <table class="pf-table">
-                <thead><tr><th>標的</th><th>數量(張)</th><th>買入均價</th><th>現價</th><th>損益金額</th><th>報酬率</th><th>操作</th></tr></thead>
-                <tbody id="portfolioBody"></tbody>
-            </table>
+            <!-- 整合進來的模擬倉 -->
+            <div class="info-card" style="flex: 1; padding: 6px; display:flex; flex-direction:column; overflow:hidden;">
+                <div class="card-header" style="margin-bottom: 4px;">🏦 模擬倉總動能</div>
+                <div class="pf-dashboard">
+                    <div class="pf-box"><div class="lbl">本金</div><div class="val" id="pf-cost" style="font-size:14px;">0</div></div>
+                    <div class="pf-box"><div class="lbl">市值</div><div class="val" id="pf-value" style="font-size:14px;">0</div></div>
+                    <div class="pf-box"><div class="lbl">損益</div><div class="val" id="pf-pnl-amt" style="font-size:14px;">0</div></div>
+                    <div class="pf-box" style="border-color:var(--cyan);"><div class="lbl">報酬</div><div class="val" id="pf-pnl-pct" style="color:var(--cyan); font-size:14px;">0%</div></div>
+                </div>
+                <div class="pf-table-wrapper">
+                    <table class="chip-table pf-table" style="width:100%;">
+                        <thead><tr><th>標的</th><th>張數</th><th>成本</th><th>現價</th><th>損益</th><th>操作</th></tr></thead>
+                        <tbody id="portfolioBody"></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -286,17 +297,13 @@
         async function startRadar() {
             document.getElementById('radarModal').style.display = 'flex';
             const listEl = document.getElementById('radarList');
-            listEl.innerHTML = '<div class="radar-empty"><span style="color:var(--cyan);">🔄 正在雷達掃描中...</span></div>';
+            listEl.innerHTML = '<div class="radar-empty"><span style="color:var(--cyan);">🔄 雷達掃描中...</span></div>';
             try {
                 const res = await fetch('https://my-ai-stock-tool.onrender.com/radar');
                 const data = await res.json();
                 if (data.status === "success" && data.matches.length > 0) {
-                    listEl.innerHTML = data.matches.map(s => `
-                        <li class="radar-item" onclick="loadFromRadar('${s.symbol}')">
-                            <div><span style="color:white; font-weight:bold; font-size:16px;">${s.name}</span> <span style="color:var(--text-muted); font-size:12px;">(${s.symbol})</span></div>
-                            <div style="color:var(--red); font-weight:bold;">${s.price.toFixed(2)}</div>
-                        </li>`).join('');
-                } else { listEl.innerHTML = '<div class="radar-empty">今日無標的符合條件。</div>'; }
+                    listEl.innerHTML = data.matches.map(s => `<li class="radar-item" onclick="loadFromRadar('${s.symbol}')"><div><span style="color:white; font-weight:bold;">${s.name}</span> <span style="color:gray; font-size:11px;">(${s.symbol})</span></div><div style="color:var(--red); font-weight:bold;">${s.price.toFixed(2)}</div></li>`).join('');
+                } else { listEl.innerHTML = '<div class="radar-empty">無標的符合條件。</div>'; }
             } catch (e) { listEl.innerHTML = '<div class="radar-empty" style="color:var(--red);">連線異常。</div>'; }
         }
         function loadFromRadar(symbol) { closeRadar(); document.getElementById('symbol').value = symbol; analyze(); }
@@ -311,15 +318,15 @@
             
             document.getElementById('mainGrid').style.display = "none"; document.getElementById('priceZone').style.display = "none";
             btn.disabled = true; btn.innerText = "掃描中...";
-            sysMsg.innerHTML = '<span style="color:var(--cyan);">🔄 AI 正在萃取劇本與產業模塊 (具備防呆除錯)...</span>';
+            sysMsg.innerText = '🔄 AI 深度解析中 (若初次喚醒需時約50秒)...';
             
             try {
                 const res = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${symbol}&interval=${interval}`);
-                if (!res.ok) throw new Error("伺服器無回應，機房啟動中...");
+                if (!res.ok) throw new Error("機房休眠喚醒中，請倒數 10 秒後再按一次！");
                 const data = await res.json();
                 
                 if(data.status === "success") {
-                    sysMsg.innerHTML = "";
+                    sysMsg.innerText = "";
                     currentAnalysis.symbol = data.symbol; currentAnalysis.price = parseFloat(data.current_price);
                     document.getElementById('mainGrid').style.display = "grid"; document.getElementById('priceZone').style.display = "flex";
                     document.getElementById('stockTitle').innerText = data.symbol.split('.')[0];
@@ -330,36 +337,33 @@
                     document.getElementById('chipTableCard').style.display = isDaily ? "block" : "none";
                     if (isDaily && data.chip_table) {
                         document.getElementById('chipTableBody').innerHTML = data.chip_table.map(r => {
-                            const fColor = r.foreign > 0 ? 'txt-red' : (r.foreign < 0 ? 'txt-green' : '');
-                            const tColor = r.trust > 0 ? 'txt-red' : (r.trust < 0 ? 'txt-green' : '');
-                            const dColor = r.dealer > 0 ? 'txt-red' : (r.dealer < 0 ? 'txt-green' : '');
-                            const totColor = r.total > 0 ? 'txt-red' : (r.total < 0 ? 'txt-green' : '');
-                            return `<tr><td>${r.date}</td><td class="${fColor}">${r.foreign}</td><td class="${tColor}">${r.trust}</td><td class="${dColor}">${r.dealer}</td><td class="${totColor}" style="font-weight:bold;">${r.total}</td></tr>`;
+                            const fC = r.foreign>0?'txt-red':(r.foreign<0?'txt-green':''); const tC = r.trust>0?'txt-red':(r.trust<0?'txt-green':'');
+                            return `<tr><td>${r.date}</td><td class="${fC}">${r.foreign}</td><td class="${tC}">${r.trust}</td><td>${r.dealer}</td><td style="font-weight:bold;">${r.total}</td></tr>`;
                         }).join('');
                     }
 
                     const ai = data.ai_analysis;
+                    let sigEl = document.getElementById('ai-signal');
+                    sigEl.innerText = ai.signal || '--';
+                    if(ai.signal) sigEl.style.color = (ai.signal.includes('多')||ai.signal.includes('強')) ? 'var(--red)' : ((ai.signal.includes('空')||ai.signal.includes('弱')) ? 'var(--green)' : 'var(--orange)');
+                    
                     document.getElementById('ai-pressure').innerText = ai.pressure || '--'; document.getElementById('ai-support').innerText = ai.support || '--';
+                    document.getElementById('s-up-p').innerText = (ai.scenario_up && ai.scenario_up.price) ? ai.scenario_up.price : '--'; document.getElementById('s-up-a').innerText = (ai.scenario_up && ai.scenario_up.action) ? ai.scenario_up.action : '--';
+                    document.getElementById('s-flat-p').innerText = (ai.scenario_flat && ai.scenario_flat.price) ? ai.scenario_flat.price : '--'; document.getElementById('s-flat-a').innerText = (ai.scenario_flat && ai.scenario_flat.action) ? ai.scenario_flat.action : '--';
+                    document.getElementById('s-down-p').innerText = (ai.scenario_down && ai.scenario_down.price) ? ai.scenario_down.price : '--'; document.getElementById('s-down-a').innerText = (ai.scenario_down && ai.scenario_down.action) ? ai.scenario_down.action : '--';
                     
-                    document.getElementById('s-up-p').innerText = (ai.scenario_up && ai.scenario_up.price) ? ai.scenario_up.price : '--';
-                    document.getElementById('s-up-a').innerText = (ai.scenario_up && ai.scenario_up.action) ? ai.scenario_up.action : '--';
-                    document.getElementById('s-flat-p').innerText = (ai.scenario_flat && ai.scenario_flat.price) ? ai.scenario_flat.price : '--';
-                    document.getElementById('s-flat-a').innerText = (ai.scenario_flat && ai.scenario_flat.action) ? ai.scenario_flat.action : '--';
-                    document.getElementById('s-down-p').innerText = (ai.scenario_down && ai.scenario_down.price) ? ai.scenario_down.price : '--';
-                    document.getElementById('s-down-a').innerText = (ai.scenario_down && ai.scenario_down.action) ? ai.scenario_down.action : '--';
-                    
-                    document.getElementById('ai-pattern-k').innerText = ai.pattern_kline || '--';
-                    document.getElementById('ai-pattern-t').innerText = ai.pattern_trend || '--';
+                    document.getElementById('ai-pattern-k').innerText = `${ai.pattern_kline || '--'} / ${ai.pattern_trend || '--'}`;
                     document.getElementById('ai-industry').innerText = ai.industry_desc || '--';
                     document.getElementById('ai-related').innerText = ai.related_stocks || '--';
 
-                    // 更新甜甜圈圖
                     let pup = ai.prob_up || 33; let pdown = ai.prob_down || 33; let pflat = ai.prob_flat || 34;
-                    document.getElementById('p-up').innerText = pup + "%";
-                    document.getElementById('p-down').innerText = pdown + "%";
-                    document.getElementById('p-flat').innerText = pflat + "%";
+                    document.getElementById('p-up').innerText = pup + "%"; document.getElementById('p-down').innerText = pdown + "%"; document.getElementById('p-flat').innerText = pflat + "%";
                     let upDeg = pup * 3.6; let flatDeg = upDeg + (pflat * 3.6);
                     document.getElementById('donutChart').style.background = `conic-gradient(var(--red) 0deg ${upDeg}deg, var(--orange) ${upDeg}deg ${flatDeg}deg, var(--green) ${flatDeg}deg 360deg)`;
+
+                    let epsVal = parseFloat(data.fundamental.eps); let peVal = parseFloat(data.fundamental.pe_ratio);
+                    document.getElementById('slider-eps').value = (!isNaN(epsVal) && epsVal > 0) ? epsVal : 0; document.getElementById('slider-pe').value = (!isNaN(peVal) && peVal > 0 && peVal < 80) ? peVal : 15;
+                    updateCalc();
 
                     let parsedSL = parseFloat((ai.stop_loss || '').replace(/[^\d.]/g, ''));
                     document.getElementById('risk-stop-loss').value = (!isNaN(parsedSL) && parsedSL > 0) ? parsedSL : (currentAnalysis.price * 0.95).toFixed(2);
@@ -370,7 +374,7 @@
                     renderCharts(data); updatePortfolioPrices();
                 } else { sysMsg.innerHTML = `<span style="color:var(--red);">❌ 分析出錯：${data.message}</span>`; }
             } catch(e) { sysMsg.innerHTML = `<span style="color:var(--red);">⚠️ ${e.message}</span>`; }
-            finally { btn.disabled = false; btn.innerText = "⚡ 啟動專業終端分析"; }
+            finally { btn.disabled = false; btn.innerText = "⚡ 啟動終端"; }
         }
 
         function generateTechTable(kline, kd, macd) {
@@ -379,27 +383,34 @@
             let lastM = macd[macd.length-1]; let prevM = macd[macd.length-2];
             
             let kdElS = document.getElementById('t-kd-s'), kdElD = document.getElementById('t-kd-d');
-            if (lastKD.k > lastKD.d) { kdElS.className = 'status-up'; kdElS.innerHTML = '↗ 多頭'; kdElD.innerText = 'K > D，偏多方'; }
-            else { kdElS.className = 'status-down'; kdElS.innerHTML = '↘ 空頭'; kdElD.innerText = 'K < D，偏空方'; }
-            if (prevKD.k <= prevKD.d && lastKD.k > lastKD.d) kdElD.innerText = '剛發生黃金交叉';
+            if (lastKD.k > lastKD.d) { kdElS.className = 'status-up'; kdElS.innerHTML = '↗ 多頭'; kdElD.innerText = 'K>D'; }
+            else { kdElS.className = 'status-down'; kdElS.innerHTML = '↘ 空頭'; kdElD.innerText = 'K<D'; }
+            if (prevKD.k <= prevKD.d && lastKD.k > lastKD.d) kdElD.innerText = '剛金叉';
 
             let mElS = document.getElementById('t-macd-s'), mElD = document.getElementById('t-macd-d');
-            if (lastM.osc > 0) {
-                mElS.className = 'status-up'; mElS.innerHTML = '↗ 多頭';
-                mElD.innerText = lastM.osc > prevM.osc ? '紅柱擴大，動能增強' : '紅柱收斂，動能減弱';
-            } else {
-                mElS.className = 'status-down'; mElS.innerHTML = '↘ 空頭';
-                mElD.innerText = lastM.osc < prevM.osc ? '綠柱擴大，跌勢增強' : '綠柱收斂，跌勢趨緩';
-            }
+            if (lastM.osc > 0) { mElS.className = 'status-up'; mElS.innerHTML = '↗ 多頭'; mElD.innerText = lastM.osc>prevM.osc?'紅柱擴大':'紅柱縮小'; } 
+            else { mElS.className = 'status-down'; mElS.innerHTML = '↘ 空頭'; mElD.innerText = lastM.osc<prevM.osc?'綠柱擴大':'綠柱縮小'; }
 
             let maElS = document.getElementById('t-ma-s'), maElD = document.getElementById('t-ma-d');
-            if (lastK.ma5 > lastK.ma20 && lastK.ma20 > lastK.ma60) { maElS.className = 'status-up'; maElS.innerHTML = '↗ 多頭排列'; maElD.innerText = '5 > 20 > 60，趨勢向上'; }
-            else if (lastK.ma5 < lastK.ma20 && lastK.ma20 < lastK.ma60) { maElS.className = 'status-down'; maElS.innerHTML = '↘ 空頭排列'; maElD.innerText = '5 < 20 < 60，趨勢向下'; }
-            else { maElS.className = 'status-flat'; maElS.innerHTML = '→ 糾結'; maElD.innerText = '均線糾結，等待表態'; }
+            if (lastK.ma5 > lastK.ma20 && lastK.ma20 > lastK.ma60) { maElS.className = 'status-up'; maElS.innerHTML = '↗ 多頭'; maElD.innerText = '5>20>60'; }
+            else if (lastK.ma5 < lastK.ma20 && lastK.ma20 < lastK.ma60) { maElS.className = 'status-down'; maElS.innerHTML = '↘ 空頭'; maElD.innerText = '5<20<60'; }
+            else { maElS.className = 'status-flat'; maElS.innerHTML = '→ 糾結'; maElD.innerText = '等待表態'; }
 
             let bbElS = document.getElementById('t-bb-s'), bbElD = document.getElementById('t-bb-d');
-            if (lastK.close > lastK.ma20) { bbElS.className = 'status-up'; bbElS.innerHTML = '↗ 偏強'; bbElD.innerText = '站上中軌，向上軌靠攏'; }
-            else { bbElS.className = 'status-down'; bbElS.innerHTML = '↘ 偏弱'; bbElD.innerText = '跌破中軌，向下軌靠攏'; }
+            if (lastK.close > lastK.ma20) { bbElS.className = 'status-up'; bbElS.innerHTML = '↗ 偏強'; bbElD.innerText = '站上中軌'; }
+            else { bbElS.className = 'status-down'; bbElS.innerHTML = '↘ 偏弱'; bbElD.innerText = '跌破中軌'; }
+        }
+
+        function updateCalc() {
+            let eps = parseFloat(document.getElementById('slider-eps').value); let pe = parseFloat(document.getElementById('slider-pe').value);
+            document.getElementById('calc-eps-val').innerText = eps.toFixed(2); document.getElementById('calc-pe-val').innerText = pe.toFixed(1);
+            let tp = eps * pe; document.getElementById('calc-result').innerText = tp.toFixed(2);
+            if(currentAnalysis.price > 0) {
+                let diff = ((tp - currentAnalysis.price) / currentAnalysis.price) * 100; let sEl = document.getElementById('calc-status');
+                if(diff > 10) { sEl.innerText = `潛在: +${diff.toFixed(1)}%`; sEl.style.color = "var(--red)"; } 
+                else if(diff < -10) { sEl.innerText = `溢價: ${diff.toFixed(1)}%`; sEl.style.color = "var(--green)"; } 
+                else { sEl.innerText = `合理估值`; sEl.style.color = "var(--orange)"; }
+            }
         }
 
         function runBacktest(klineData, kdData, macdData) {
@@ -417,23 +428,17 @@
             }
             if (holding) { let ret = ((klineData[klineData.length-1].close - buyPrice) / buyPrice) * 100; totalReturn += ret; if (ret > 0) wins++; else losses++; }
             
-            let total = wins + losses; 
-            let wr = total > 0 ? Math.round((wins / total) * 100) : 0;
-            
+            let total = wins + losses; let wr = total > 0 ? Math.round((wins / total) * 100) : 0;
             document.getElementById('gaugeText').innerText = `${wr}%`;
-            document.getElementById('gaugeLabel').innerText = `交易 ${total} 次，總報酬 ${totalReturn>0?'+':''}${totalReturn.toFixed(1)}%`;
-            let deg = -90 + (180 * (wr / 100));
-            document.getElementById('gaugeNeedle').style.transform = `rotate(${deg}deg)`;
-            if (wr >= 60) document.getElementById('gaugeText').style.color = "var(--red)";
-            else if (wr <= 40) document.getElementById('gaugeText').style.color = "var(--green)";
-            else document.getElementById('gaugeText').style.color = "white";
+            document.getElementById('gaugeLabel').innerText = `${total}次 / ${totalReturn>0?'+':''}${totalReturn.toFixed(1)}%`;
+            let deg = -90 + (180 * (wr / 100)); document.getElementById('gaugeNeedle').style.transform = `rotate(${deg}deg)`;
+            if (wr >= 60) document.getElementById('gaugeText').style.color = "var(--red)"; else if (wr <= 40) document.getElementById('gaugeText').style.color = "var(--green)"; else document.getElementById('gaugeText').style.color = "white";
         }
 
         function updateRiskCalc() {
             let cp = currentAnalysis.price; let sl = parseFloat(document.getElementById('risk-stop-loss').value); let maxLoss = parseFloat(document.getElementById('risk-max-loss').value);
             if (cp > 0 && sl > 0 && cp > sl && maxLoss > 0) {
-                let riskPerLot = (cp - sl) * 1000; let maxLots = maxLoss / riskPerLot;
-                document.getElementById('risk-result').innerText = maxLots.toFixed(2) + ' 張';
+                let riskPerLot = (cp - sl) * 1000; let maxLots = maxLoss / riskPerLot; document.getElementById('risk-result').innerText = maxLots.toFixed(1) + ' 張';
             } else { document.getElementById('risk-result').innerText = '0 張'; }
         }
 
@@ -443,37 +448,28 @@
             const iv = data.interval;
             const opt = { layout: { background: '#0a1128', textColor: '#94a3b8' }, grid: { vertLines: { color: '#1e3a8a' }, horzLines: { color: '#1e3a8a' } }, crosshair: { mode: LightweightCharts.CrosshairMode.Normal }, timeScale: { visible: false, timeVisible: iv !== '1d' } };
 
-            charts.main = LightweightCharts.createChart(document.getElementById('mainChart'), { ...opt, height: 420 });
-            
+            charts.main = LightweightCharts.createChart(document.getElementById('mainChart'), { ...opt, height: 330 });
             seriesDict.bbUpper = charts.main.addLineSeries({ color: 'rgba(255,255,255,0.3)', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false });
             seriesDict.bbLower = charts.main.addLineSeries({ color: 'rgba(255,255,255,0.3)', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false });
-            if (data.chart_data[0].bb_upper) {
-                seriesDict.bbUpper.setData(data.chart_data.map(d => ({ time: d.time, value: d.bb_upper })));
-                seriesDict.bbLower.setData(data.chart_data.map(d => ({ time: d.time, value: d.bb_lower })));
-            }
-
-            seriesDict.candle = charts.main.addCandlestickSeries({ upColor: '#ef4444', downColor: '#10b981', borderVisible: false, wickUpColor: '#ef4444', wickDownColor: '#10b981' });
-            seriesDict.candle.setData(data.chart_data);
-
+            if (data.chart_data[0].bb_upper) { seriesDict.bbUpper.setData(data.chart_data.map(d => ({ time: d.time, value: d.bb_upper }))); seriesDict.bbLower.setData(data.chart_data.map(d => ({ time: d.time, value: d.bb_lower }))); }
+            seriesDict.candle = charts.main.addCandlestickSeries({ upColor: '#ef4444', downColor: '#10b981', borderVisible: false, wickUpColor: '#ef4444', wickDownColor: '#10b981' }); seriesDict.candle.setData(data.chart_data);
             seriesDict.ma5 = charts.main.addLineSeries({ color: '#fde047', lineWidth: 1.5, crosshairMarkerVisible: false }); seriesDict.ma5.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma5 })));
             seriesDict.ma20 = charts.main.addLineSeries({ color: '#f43f5e', lineWidth: 1.5, crosshairMarkerVisible: false }); seriesDict.ma20.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma20 })));
             seriesDict.ma60 = charts.main.addLineSeries({ color: '#06b6d4', lineWidth: 1.5, crosshairMarkerVisible: false }); seriesDict.ma60.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma60 })));
 
             const legend = document.getElementById('chartLegend');
-            const lma5 = document.getElementById('l-ma5'); const lma20 = document.getElementById('l-ma20'); const lma60 = document.getElementById('l-ma60');
-            const lbb = document.getElementById('l-bb');
+            const lma5 = document.getElementById('l-ma5'); const lma20 = document.getElementById('l-ma20'); const lma60 = document.getElementById('l-ma60'); const lbb = document.getElementById('l-bb');
 
             charts.main.subscribeCrosshairMove(param => {
                 if (param.time && param.seriesData.get(seriesDict.candle)) {
                     const p = param.seriesData.get(seriesDict.candle);
                     let tStr = param.time; if (typeof param.time === 'number') { tStr = new Date(param.time * 1000).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); }
                     legend.style.display = 'block';
-                    legend.innerHTML = `${tStr}<br>開 <span style="color:#fff">${p.open.toFixed(2)}</span><br>高 <span style="color:var(--red)">${p.high.toFixed(2)}</span><br>低 <span style="color:var(--green)">${p.low.toFixed(2)}</span><br>收 <span style="color:var(--cyan)">${p.close.toFixed(2)}</span>`;
-                    
-                    const m5 = param.seriesData.get(seriesDict.ma5); lma5.innerText = `MA5: ${m5 ? m5.value.toFixed(2) : '--'}`;
-                    const m20 = param.seriesData.get(seriesDict.ma20); lma20.innerText = `MA20: ${m20 ? m20.value.toFixed(2) : '--'}`;
-                    const m60 = param.seriesData.get(seriesDict.ma60); lma60.innerText = `MA60: ${m60 ? m60.value.toFixed(2) : '--'}`;
-                    const bbu = param.seriesData.get(seriesDict.bbUpper); lbb.innerText = `通道上軌: ${bbu ? bbu.value.toFixed(2) : '--'}`;
+                    legend.innerHTML = `${tStr} 開 <span style="color:#fff">${p.open.toFixed(2)}</span> 高 <span style="color:var(--red)">${p.high.toFixed(2)}</span> 低 <span style="color:var(--green)">${p.low.toFixed(2)}</span> 收 <span style="color:var(--cyan)">${p.close.toFixed(2)}</span>`;
+                    const m5 = param.seriesData.get(seriesDict.ma5); lma5.innerText = `M5:${m5 ? m5.value.toFixed(1) : '--'}`;
+                    const m20 = param.seriesData.get(seriesDict.ma20); lma20.innerText = `M20:${m20 ? m20.value.toFixed(1) : '--'}`;
+                    const m60 = param.seriesData.get(seriesDict.ma60); lma60.innerText = `M60:${m60 ? m60.value.toFixed(1) : '--'}`;
+                    const bbu = param.seriesData.get(seriesDict.bbUpper); lbb.innerText = `上軌:${bbu ? bbu.value.toFixed(1) : '--'}`;
                 } else { legend.style.display = 'none'; }
             });
 
@@ -482,7 +478,6 @@
                 let macdMap = {}; data.macd_data.forEach(d => { macdMap[d.time] = d.osc; });
                 let ma20Map = {}; data.chart_data.forEach(d => { ma20Map[d.time] = d.ma20; });
                 let priceMap = {}; data.chart_data.forEach(d => { priceMap[d.time] = d.close; });
-
                 for (let i = 1; i < data.kd_data.length; i++) {
                     const p = data.kd_data[i - 1], c = data.kd_data[i];
                     let cp = priceMap[c.time]; let ma20 = ma20Map[c.time] || 0; let osc = macdMap[c.time] || 0;
@@ -492,31 +487,30 @@
                 seriesDict.candle.setMarkers(markers);
             }
 
-            charts.macd = LightweightCharts.createChart(document.getElementById('macdChart'), { ...opt, height: 120 });
+            charts.macd = LightweightCharts.createChart(document.getElementById('macdChart'), { ...opt, height: 95 });
             charts.macd.addHistogramSeries({ color: '#10b981', priceFormat: { type: 'volume' } }).setData(data.macd_data.map(d => ({ time: d.time, value: d.osc, color: d.osc > 0 ? '#ef4444' : '#10b981' })));
-            charts.macd.addLineSeries({ color: '#3b82f6', lineWidth: 1.5 }).setData(data.macd_data.map(d => ({ time: d.time, value: d.dif })));
+            charts.macd.addLineSeries({ color: '#3b82f6', lineWidth: 1 }).setData(data.macd_data.map(d => ({ time: d.time, value: d.dif })));
             
-            charts.kd = LightweightCharts.createChart(document.getElementById('kdChart'), { ...opt, height: 120 });
-            charts.kd.addLineSeries({ color: '#3b82f6', lineWidth: 1.5 }).setData(data.kd_data.map(d => ({ time: d.time, value: d.k })));
-            charts.kd.addLineSeries({ color: '#f59e0b', lineWidth: 1.5 }).setData(data.kd_data.map(d => ({ time: d.time, value: d.d })));
+            charts.kd = LightweightCharts.createChart(document.getElementById('kdChart'), { ...opt, height: 95 });
+            charts.kd.addLineSeries({ color: '#3b82f6', lineWidth: 1 }).setData(data.kd_data.map(d => ({ time: d.time, value: d.k })));
+            charts.kd.addLineSeries({ color: '#f59e0b', lineWidth: 1 }).setData(data.kd_data.map(d => ({ time: d.time, value: d.d })));
 
             const allCharts = [charts.main, charts.macd, charts.kd];
             
             if (iv === '1d') {
-                charts.chip = LightweightCharts.createChart(document.getElementById('chipChart'), { ...opt, height: 140, timeScale: { visible: true } });
+                charts.chip = LightweightCharts.createChart(document.getElementById('chipChart'), { ...opt, height: 110, timeScale: { visible: true } });
                 const chipTotal = charts.chip.addHistogramSeries({ priceFormat: { type: 'volume' } });
                 if (data.chip_data && data.chip_data.length > 0) chipTotal.setData(data.chip_data.map(d => ({ time: d.time, value: d.value, color: d.value > 0 ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)' })));
-                
-                seriesDict.foreignLine = charts.chip.addLineSeries({ color: '#fde047', lineWidth: 2 });
+                seriesDict.foreignLine = charts.chip.addLineSeries({ color: '#fde047', lineWidth: 1.5 });
                 if (data.foreign_data && data.foreign_data.length > 0) seriesDict.foreignLine.setData(data.foreign_data);
-                seriesDict.trustLine = charts.chip.addLineSeries({ color: '#f43f5e', lineWidth: 2 });
+                seriesDict.trustLine = charts.chip.addLineSeries({ color: '#f43f5e', lineWidth: 1.5 });
                 if (data.trust_data && data.trust_data.length > 0) seriesDict.trustLine.setData(data.trust_data);
                 
                 const lFor = document.getElementById('l-for'); const lTru = document.getElementById('l-tru');
                 charts.chip.subscribeCrosshairMove(param => {
                     if (param.time) {
-                        const fVal = param.seriesData.get(seriesDict.foreignLine); lFor.innerText = `外資: ${fVal ? fVal.value.toFixed(1) : '--'}`;
-                        const tVal = param.seriesData.get(seriesDict.trustLine); lTru.innerText = `投信: ${tVal ? tVal.value.toFixed(1) : '--'}`;
+                        const fVal = param.seriesData.get(seriesDict.foreignLine); lFor.innerText = `外:${fVal ? fVal.value.toFixed(0) : '--'}`;
+                        const tVal = param.seriesData.get(seriesDict.trustLine); lTru.innerText = `投:${tVal ? tVal.value.toFixed(0) : '--'}`;
                     }
                 });
                 allCharts.push(charts.chip);
@@ -529,10 +523,8 @@
 
         function buyStock() { 
             if(!currentAnalysis.symbol) return; 
-            let lotsStr = prompt(`欲買進 ${currentAnalysis.symbol}，請輸入張數：`, "1");
-            if(lotsStr === null) return;
-            let lots = parseFloat(lotsStr);
-            if(isNaN(lots) || lots <= 0) return;
+            let lotsStr = prompt(`買進 ${currentAnalysis.symbol}，輸入張數：`, "1");
+            if(lotsStr === null) return; let lots = parseFloat(lotsStr); if(isNaN(lots) || lots <= 0) return;
             portfolio.push({ symbol: currentAnalysis.symbol, buyPrice: currentAnalysis.price, currentPrice: currentAnalysis.price, lots: lots }); 
             saveAndRender(); 
         }
@@ -542,17 +534,15 @@
             const tbody = document.getElementById('portfolioBody'); tbody.innerHTML = '';
             let totalCost = 0, totalValue = 0;
             if(portfolio.length === 0) { 
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">目前無持股</td></tr>'; 
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">無持股</td></tr>'; 
             } else {
                 portfolio.forEach((item, index) => {
                     let cost = item.buyPrice * item.lots * 1000; let val = item.currentPrice * item.lots * 1000;
                     totalCost += cost; totalValue += val;
-                    let pnlAmt = val - cost; let pnlPct = (pnlAmt / cost) * 100;
+                    let pnlAmt = val - cost;
                     const cClass = pnlAmt >= 0 ? 'txt-red' : 'txt-green';
-                    const pnlText = pnlAmt >= 0 ? `+${pnlAmt.toLocaleString(undefined, {maximumFractionDigits:0})}` : pnlAmt.toLocaleString(undefined, {maximumFractionDigits:0});
-                    const pctText = pnlPct >= 0 ? `+${pnlPct.toFixed(2)}%` : `${pnlPct.toFixed(2)}%`;
                     const pureSym = item.symbol.split('.')[0];
-                    tbody.innerHTML += `<tr><td style="color:white; font-weight:bold;">${pureSym}</td><td>${item.lots}</td><td>${item.buyPrice.toFixed(2)}</td><td>${parseFloat(item.currentPrice).toFixed(2)}</td><td class="${cClass}" style="font-weight:bold;">${pnlText}</td><td class="${cClass}" style="font-weight:bold;">${pctText}</td><td><button style="background:var(--cyan); color:#020617; font-weight:bold; border:none; padding:4px 10px; border-radius:4px; cursor:pointer;" onclick="sellStock(${index})">平倉</button></td></tr>`;
+                    tbody.innerHTML += `<tr><td style="color:white;">${pureSym}</td><td>${item.lots}</td><td>${item.buyPrice.toFixed(1)}</td><td>${parseFloat(item.currentPrice).toFixed(1)}</td><td class="${cClass}">${pnlAmt>0?'+':''}${pnlAmt.toFixed(0)}</td><td><button style="background:var(--cyan); color:#020617; font-weight:bold; border:none; padding:2px 6px; border-radius:2px; cursor:pointer; font-size:10px;" onclick="sellStock(${index})">平倉</button></td></tr>`;
                 });
             }
             document.getElementById('pf-cost').innerText = totalCost.toLocaleString(undefined, {maximumFractionDigits:0});
