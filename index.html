@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 股票戰情室 - 高密度旗艦版</title>
+    <title>AI 股票戰情室 - 警示雷達版</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         :root { 
@@ -15,10 +15,10 @@
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-dark); color: var(--text-main); margin: 0; padding: 8px; height: 100vh; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; }
         ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: var(--bg-dark); } ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
 
-        .top-bar { flex: 0 0 45px; display: flex; justify-content: space-between; align-items: center; background: var(--panel-bg); padding: 0 15px; border-radius: 4px; border: 1px solid var(--border-color); margin-bottom: 8px; box-shadow: 0 0 10px rgba(30,58,138,0.3); }
+        .top-bar { flex: 0 0 45px; display: flex; justify-content: space-between; align-items: center; background: var(--panel-bg); padding: 0 15px; border-radius: 4px; border: 1px solid var(--border-color); margin-bottom: 8px; }
         .search-group { display: flex; gap: 8px; align-items: center; }
         input[type="text"], input[type="number"], select { padding: 6px 10px; background: #020617; border: 1px solid var(--border-color); color: white; border-radius: 4px; outline: none; font-weight: bold; font-size: 13px; }
-        button { padding: 6px 15px; border: none; border-radius: 4px; font-weight: bold; font-size: 13px; cursor: pointer; color: white; transition: 0.2s; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+        button { padding: 6px 15px; border: none; border-radius: 4px; font-weight: bold; font-size: 13px; cursor: pointer; color: white; transition: 0.2s; }
         .btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); border: 1px solid #3b82f6; } .btn-primary:hover { background: #1e40af; }
         .btn-radar { background: linear-gradient(135deg, #7c3aed, #5b21b6); border: 1px solid #8b5cf6; } .btn-radar:hover { background: #4c1d95; }
         .btn-sector { background: linear-gradient(135deg, #059669, #047857); border: 1px solid #10b981; } .btn-sector:hover { background: #065f46; }
@@ -43,6 +43,19 @@
         .info-card { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; }
         .card-header { font-size: 12px; font-weight: bold; color: var(--cyan); border-bottom: 1px solid var(--border-color); padding-bottom: 4px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;}
         
+        /* === 新增：主力警示與量價區塊樣式 === */
+        .alert-box { border: 1px dashed var(--text-muted); background: #020617; border-radius: 4px; padding: 8px; text-align: center; margin-bottom: 6px; transition: 0.3s; }
+        .alert-danger { border-color: var(--red); background: rgba(239,68,68,0.1); box-shadow: 0 0 10px rgba(239,68,68,0.3); }
+        .alert-title { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
+        .alert-danger .alert-title { color: var(--red); animation: blink 1s infinite alternate; }
+        .alert-msg { font-size: 11px; color: var(--text-main); }
+        @keyframes blink { from { opacity: 1; } to { opacity: 0.6; text-shadow: 0 0 10px var(--red); } }
+
+        .vol-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+        .vol-item { background: #020617; padding: 6px; border-radius: 4px; border: 1px solid #1e293b; text-align: center;}
+        .vol-lbl { font-size: 10px; color: var(--text-muted); }
+        .vol-val { font-size: 14px; font-weight: bold; color: white; margin-top: 2px;}
+
         .scenario-grid { display: flex; flex-direction: column; gap: 5px; }
         .scenario-box { background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 6px 8px; display: flex; justify-content: space-between; align-items: center; }
         .scenario-box .lbl { font-size: 11px; font-weight: bold; }
@@ -92,9 +105,6 @@
         input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; background: var(--border-color); border-radius: 2px; }
         .result-box { background:#020617; padding:8px; border-radius:4px; text-align:center; border: 1px solid var(--border-color); }
         
-        .advice-list { margin: 0; padding-left: 16px; font-size: 11px; color: #a5d6a7; line-height: 1.4; }
-        .advice-list li { margin-bottom: 4px; }
-
         .pf-dashboard { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 6px; }
         .pf-box { background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 6px; text-align: center; }
         .pf-box .lbl { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
@@ -106,7 +116,6 @@
         .txt-red { color: var(--red); } .txt-green { color: var(--green); }
         #sysMessage { font-size: 12px; color: var(--cyan); position: absolute; top: 15px; left: 50%; transform: translateX(-50%); font-weight: bold;}
         
-        /* Modal 通用 */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: none; justify-content: center; align-items: center; }
         .modal-content { background: var(--panel-bg); border: 1px solid var(--blue); border-radius: 8px; width: 450px; padding: 15px; max-height: 80vh; display:flex; flex-direction:column; }
         .modal-header { font-size: 16px; font-weight: bold; color: white; margin-bottom: 10px; display: flex; justify-content: space-between; }
@@ -117,38 +126,30 @@
         .sector-item:hover { background: #0f172a; }
         .sector-item:last-child { border-bottom: none; }
         .radar-list { list-style: none; padding: 0; margin: 0; max-height: 250px; overflow-y: auto; }
+        .radar-item { background: #0b0e14; margin-bottom: 6px; padding: 10px; border-radius: 4px; display: flex; justify-content: space-between; border: 1px solid var(--border-color); cursor: pointer; }
+        .radar-item:hover { border-color: var(--cyan); }
     </style>
 </head>
 <body>
     <div class="modal-overlay" id="radarModal">
-        <div class="modal-content" style="width: 350px;">
-            <div class="modal-header"><span>📡 選股雷達掃描</span><button style="background:none;border:none;color:gray;cursor:pointer;" onclick="closeModal('radarModal')">×</button></div>
-            <ul class="radar-list" id="radarList"><div style="text-align:center;color:gray;padding:10px;">掃描中...</div></ul>
-        </div>
+        <div class="modal-content" style="width: 350px;"><div class="modal-header"><span>📡 選股雷達掃描</span><button style="background:none;border:none;color:gray;cursor:pointer;" onclick="closeModal('radarModal')">×</button></div><ul class="radar-list" id="radarList"><div style="text-align:center;color:gray;padding:10px;">掃描中...</div></ul></div>
     </div>
-
     <div class="modal-overlay" id="sectorModal">
-        <div class="modal-content" style="width: 500px;">
-            <div class="modal-header"><span>🗂️ 產業板塊熱力圖</span><button style="background:none;border:none;color:gray;cursor:pointer;" onclick="closeModal('sectorModal')">×</button></div>
-            <div class="sector-list" id="sectorList"><div style="text-align:center;color:var(--cyan);padding:20px;">載入板塊資金動向中...</div></div>
-        </div>
+        <div class="modal-content" style="width: 500px;"><div class="modal-header"><span>🗂️ 產業板塊熱力圖</span><button style="background:none;border:none;color:gray;cursor:pointer;" onclick="closeModal('sectorModal')">×</button></div><div class="sector-list" id="sectorList"><div style="text-align:center;color:var(--cyan);padding:20px;">載入中...</div></div></div>
     </div>
 
     <div class="top-bar">
         <div class="search-group">
             <button class="btn-radar" onclick="startRadar()">📡 雷達</button>
-            <button class="btn-sector" onclick="startSectors()">🗂️ 產業板塊</button>
+            <button class="btn-sector" onclick="startSectors()">🗂️ 板塊</button>
             <div style="width: 1px; height: 20px; background: var(--border-color); margin: 0 5px;"></div>
             <input type="text" id="symbol" value="3661" placeholder="代碼" style="width: 80px;">
-            <select id="intervalSelector"><option value="1d" selected>日K</option><option value="60m">60分</option><option value="15m">15分</option><option value="5m">5分</option><option value="1m">1分</option></select>
+            <select id="intervalSelector"><option value="1d" selected>日K</option><option value="60m">60分</option></select>
             <button class="btn-primary" id="analyzeBtn" onclick="analyze()">⚡ 啟動終端</button>
         </div>
         <div id="sysMessage"></div>
         <div class="price-zone" id="priceZone">
-            <div style="display:flex; align-items: baseline; gap:8px;">
-                <span id="stockTitle" style="font-weight:bold; font-size:20px; letter-spacing:1px; color:white;">--</span>
-                <span id="ai-signal" style="font-size:14px; font-weight:bold; padding:2px 6px; border-radius:4px; background:rgba(255,255,255,0.1);">--</span>
-            </div>
+            <div style="display:flex; align-items: baseline; gap:8px;"><span id="stockTitle" style="font-weight:bold; font-size:20px; letter-spacing:1px; color:white;">--</span><span id="ai-signal" style="font-size:14px; font-weight:bold; padding:2px 6px; border-radius:4px; background:rgba(255,255,255,0.1);">--</span></div>
             <div class="current-price" id="currentPriceDisplay">0.00</div>
             <button style="background:var(--orange); font-size:12px; padding:6px 10px; border-radius:4px; border:none; cursor:pointer;" onclick="buyStock()">+ 模擬倉</button>
         </div>
@@ -171,16 +172,24 @@
         </div>
         
         <div class="column">
-            <div class="info-card" style="padding: 6px;">
-                <div class="card-header" style="margin-bottom: 4px;">📋 指標狀態總覽</div>
-                <table class="tech-table">
-                    <tbody id="techTableBody">
-                        <tr><td>KD</td><td id="t-kd-s">--</td><td id="t-kd-d">--</td></tr>
-                        <tr><td>MACD</td><td id="t-macd-s">--</td><td id="t-macd-d">--</td></tr>
-                        <tr><td>均線</td><td id="t-ma-s">--</td><td id="t-ma-d">--</td></tr>
-                        <tr><td>布林</td><td id="t-bb-s">--</td><td id="t-bb-d">--</td></tr>
-                    </tbody>
-                </table>
+            <!-- 全新：量價背離與警示中心 -->
+            <div class="info-card" style="padding: 6px; border-color:var(--orange);">
+                <div class="card-header" style="margin-bottom: 4px; color:var(--orange);">🚨 盤後量價警示中心</div>
+                
+                <div class="alert-box" id="alertBox">
+                    <div class="alert-title" id="alertTitle">安全</div>
+                    <div class="alert-msg" id="alertMsg">目前無明顯出貨跡象</div>
+                </div>
+
+                <div class="vol-grid">
+                    <div class="vol-item"><div class="vol-lbl">今日成交量</div><div class="vol-val" id="vol-today">0</div></div>
+                    <div class="vol-item"><div class="vol-lbl">5日均量</div><div class="vol-val" id="vol-ma5">0</div></div>
+                </div>
+                <div style="background:#020617; border: 1px solid #1e293b; border-radius:4px; padding: 6px; text-align:center;">
+                    <div style="font-size:10px; color:var(--text-muted); margin-bottom: 2px;">量價結構判定</div>
+                    <div id="vol-status" style="font-size:14px; font-weight:bold; color:white;">--</div>
+                    <div id="vol-desc" style="font-size:10px; color:var(--text-muted); margin-top:2px;">--</div>
+                </div>
             </div>
 
             <div class="info-card" style="padding: 6px;">
@@ -195,18 +204,10 @@
             <div class="info-card" id="chipTableCard" style="padding: 6px;">
                 <div class="card-header" style="margin-bottom: 4px;">🏦 法人近 10 日(張)</div>
                 <table class="chip-table"><thead><tr><th>日期</th><th>外</th><th>投</th><th>自</th><th>計</th></tr></thead><tbody id="chipTableBody"></tbody></table>
-                <!-- 全新：籌碼結論區塊 -->
                 <div style="background:#020617; border: 1px dashed var(--cyan); border-radius:4px; padding: 6px; margin-top: 6px; text-align:center;">
-                    <div style="font-size:10px; color:var(--text-muted); margin-bottom: 2px;">主力籌碼解讀 (AI)</div>
+                    <div style="font-size:10px; color:var(--text-muted); margin-bottom: 2px;">主力籌碼解讀</div>
                     <div id="ai-chip-status" style="font-size:12px; font-weight:bold; color:white;">--</div>
                 </div>
-            </div>
-
-            <div class="info-card" style="border-color: var(--blue); padding: 8px;">
-                <div class="card-header" style="color: var(--blue); margin-bottom: 4px;">📈 估值計算機</div>
-                <div class="slider-row"><div><span>預估 EPS</span><span id="calc-eps-val" style="color:#fff">0.00</span></div><input type="range" id="slider-eps" min="0" max="150" step="0.5" value="0" oninput="updateCalc()"></div>
-                <div class="slider-row"><div><span>目標 PE</span><span id="calc-pe-val" style="color:#fff">15.0</span></div><input type="range" id="slider-pe" min="5" max="80" step="1" value="15" oninput="updateCalc()"></div>
-                <div class="result-box"><div id="calc-result" style="font-size:18px; font-weight:bold; color:var(--cyan); font-family:monospace;">--</div><div id="calc-status" style="font-size:10px; margin-top:2px;">--</div></div>
             </div>
         </div>
 
@@ -214,21 +215,11 @@
             <div class="ai-quant-row">
                 <div class="ai-quant-box" style="border-color: var(--red);">
                     <div style="font-size:11px; color:var(--red); font-weight:bold; margin-bottom:6px; position:absolute; top:4px; left:6px;">嚴選勝率</div>
-                    <div class="gauge-container">
-                        <div class="gauge-arc" id="gaugeArc"></div><div class="gauge-needle" id="gaugeNeedle"></div>
-                        <div class="gauge-text" id="gaugeText">0%</div><div class="gauge-label" id="gaugeLabel">等待計算</div>
-                    </div>
+                    <div class="gauge-container"><div class="gauge-arc" id="gaugeArc"></div><div class="gauge-needle" id="gaugeNeedle"></div><div class="gauge-text" id="gaugeText">0%</div><div class="gauge-label" id="gaugeLabel">等待計算</div></div>
                 </div>
                 <div class="ai-quant-box" style="border-color: var(--cyan);">
                     <div style="font-size:11px; color:var(--cyan); font-weight:bold; margin-bottom:6px; position:absolute; top:4px; left:6px;">明日AI機率</div>
-                    <div class="donut-wrap">
-                        <div class="donut-chart" id="donutChart"><div class="donut-inner">AI</div></div>
-                        <div class="donut-legend">
-                            <div class="d-leg-item"><div class="d-dot" style="background:var(--red);"></div>漲 <span id="p-up" style="color:white;">--%</span></div>
-                            <div class="d-leg-item"><div class="d-dot" style="background:var(--orange);"></div>盤 <span id="p-flat" style="color:white;">--%</span></div>
-                            <div class="d-leg-item"><div class="d-dot" style="background:var(--green);"></div>跌 <span id="p-down" style="color:white;">--%</span></div>
-                        </div>
-                    </div>
+                    <div class="donut-wrap"><div class="donut-chart" id="donutChart"><div class="donut-inner">AI</div></div><div class="donut-legend"><div class="d-leg-item"><div class="d-dot" style="background:var(--red);"></div>漲 <span id="p-up" style="color:white;">--%</span></div><div class="d-leg-item"><div class="d-dot" style="background:var(--orange);"></div>盤 <span id="p-flat" style="color:white;">--%</span></div><div class="d-leg-item"><div class="d-dot" style="background:var(--green);"></div>跌 <span id="p-down" style="color:white;">--%</span></div></div></div>
                 </div>
             </div>
 
@@ -239,14 +230,12 @@
                 </div>
                 <div class="industry-box">
                     <div style="font-size:10px; color:var(--text-muted); display:flex; justify-content:space-between;"><span>產業鏈: <b id="ai-industry" style="color:white;">--</b></span><span>壓力: <b id="ai-pressure" style="color:var(--green);">--</b></span></div>
-                    <div class="industry-link" id="ai-related">--</div>
                 </div>
-                <ul id="ai-advice" class="advice-list" style="margin-top:8px;"></ul>
             </div>
             
             <div class="info-card" style="border-color: var(--green); padding: 8px;">
                 <div style="display:flex; gap:8px; margin-bottom: 6px;">
-                    <div style="flex:1;"><div style="font-size:10px; color:var(--text-muted); margin-bottom:2px;">停損參考價</div><input type="number" id="risk-stop-loss" value="0" step="0.5" style="width:100%; box-sizing:border-box; padding:4px; font-size:12px; text-align:center;" oninput="updateRiskCalc()"></div>
+                    <div style="flex:1;"><div style="font-size:10px; color:var(--text-muted); margin-bottom:2px;">停損價</div><input type="number" id="risk-stop-loss" value="0" step="0.5" style="width:100%; box-sizing:border-box; padding:4px; font-size:12px; text-align:center;" oninput="updateRiskCalc()"></div>
                     <div style="flex:1;"><div style="font-size:10px; color:var(--text-muted); margin-bottom:2px;">可承虧損</div><input type="number" id="risk-max-loss" value="5000" step="1000" style="width:100%; box-sizing:border-box; padding:4px; font-size:12px; text-align:center;" oninput="updateRiskCalc()"></div>
                     <div class="result-box" style="flex:1; display:flex; flex-direction:column; justify-content:center;"><div style="font-size:10px; color:var(--text-muted);">可買張數</div><div id="risk-result" style="font-size:14px; font-weight:bold; color:var(--green);">0 張</div></div>
                 </div>
@@ -260,12 +249,7 @@
                     <div class="pf-box"><div class="lbl">損益</div><div class="val" id="pf-pnl-amt" style="font-size:14px;">0</div></div>
                     <div class="pf-box" style="border-color:var(--cyan);"><div class="lbl">報酬</div><div class="val" id="pf-pnl-pct" style="color:var(--cyan); font-size:14px;">0%</div></div>
                 </div>
-                <div class="pf-table-wrapper">
-                    <table class="chip-table pf-table" style="width:100%;">
-                        <thead><tr><th>標的</th><th>張數</th><th>成本</th><th>現價</th><th>損益</th><th>操作</th></tr></thead>
-                        <tbody id="portfolioBody"></tbody>
-                    </table>
-                </div>
+                <div class="pf-table-wrapper"><table class="chip-table pf-table" style="width:100%;"><thead><tr><th>標的</th><th>張</th><th>成本</th><th>現價</th><th>損益</th><th>操作</th></tr></thead><tbody id="portfolioBody"></tbody></table></div>
             </div>
         </div>
     </div>
@@ -328,7 +312,7 @@
             
             document.getElementById('mainGrid').style.display = "none"; document.getElementById('priceZone').style.display = "none";
             btn.disabled = true; btn.innerText = "掃描中...";
-            sysMsg.innerText = '🔄 高階量化模型推演中...';
+            sysMsg.innerText = '🔄 高階量價模型推演中...';
             
             try {
                 const res = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${symbol}&interval=${interval}`);
@@ -352,6 +336,20 @@
                         }).join('');
                     }
 
+                    // === 新增：渲染量價與警示面板 ===
+                    const vData = data.volume_data;
+                    document.getElementById('vol-today').innerText = vData.today_vol.toLocaleString();
+                    document.getElementById('vol-ma5').innerText = vData.vol_ma5.toLocaleString();
+                    let vStatus = document.getElementById('vol-status');
+                    vStatus.innerText = vData.status; vStatus.style.color = vData.color;
+                    document.getElementById('vol-desc').innerText = vData.desc;
+
+                    const wBox = data.warning_box;
+                    let aBox = document.getElementById('alertBox');
+                    document.getElementById('alertTitle').innerText = wBox.title;
+                    document.getElementById('alertMsg').innerText = wBox.msg;
+                    if(wBox.active) { aBox.classList.add('alert-danger'); } else { aBox.classList.remove('alert-danger'); }
+
                     const ai = data.ai_analysis;
                     let sigEl = document.getElementById('ai-signal');
                     sigEl.innerText = ai.signal || '--';
@@ -364,67 +362,22 @@
                     
                     document.getElementById('ai-pattern-k').innerText = `${ai.pattern_kline || '--'} / ${ai.pattern_trend || '--'}`;
                     document.getElementById('ai-industry').innerText = ai.industry_desc || '--';
-                    document.getElementById('ai-related').innerText = ai.related_stocks || '--';
-                    
-                    // 填入籌碼短評
-                    document.getElementById('ai-chip-status').innerText = ai.chip_status || '法人動態不明';
-                    document.getElementById('ai-advice').innerHTML = Array.isArray(ai.advice) ? ai.advice.map(t => `<li>${t}</li>`).join('') : `<li>${ai.advice}</li>`;
+                    document.getElementById('ai-chip-status').innerText = ai.chip_status || '動向不明';
 
                     let pup = ai.prob_up || 33; let pdown = ai.prob_down || 33; let pflat = ai.prob_flat || 34;
                     document.getElementById('p-up').innerText = pup + "%"; document.getElementById('p-down').innerText = pdown + "%"; document.getElementById('p-flat').innerText = pflat + "%";
                     let upDeg = pup * 3.6; let flatDeg = upDeg + (pflat * 3.6);
                     document.getElementById('donutChart').style.background = `conic-gradient(var(--red) 0deg ${upDeg}deg, var(--orange) ${upDeg}deg ${flatDeg}deg, var(--green) ${flatDeg}deg 360deg)`;
 
-                    let epsVal = parseFloat(data.fundamental.eps); let peVal = parseFloat(data.fundamental.pe_ratio);
-                    document.getElementById('slider-eps').value = (!isNaN(epsVal) && epsVal > 0) ? epsVal : 0; document.getElementById('slider-pe').value = (!isNaN(peVal) && peVal > 0 && peVal < 80) ? peVal : 15;
-                    updateCalc();
-
                     let parsedSL = parseFloat((ai.stop_loss || '').replace(/[^\d.]/g, ''));
                     document.getElementById('risk-stop-loss').value = (!isNaN(parsedSL) && parsedSL > 0) ? parsedSL : (currentAnalysis.price * 0.95).toFixed(2);
                     updateRiskCalc();
 
-                    generateTechTable(data.chart_data, data.kd_data, data.macd_data);
                     runBacktest(data.chart_data, data.kd_data, data.macd_data);
                     renderCharts(data); updatePortfolioPrices();
                 } else { sysMsg.innerHTML = `<span style="color:var(--red);">❌ 分析出錯：${data.message}</span>`; }
             } catch(e) { sysMsg.innerHTML = `<span style="color:var(--red);">⚠️ ${e.message}</span>`; }
             finally { btn.disabled = false; btn.innerText = "⚡ 啟動終端"; }
-        }
-
-        function generateTechTable(kline, kd, macd) {
-            let lastK = kline[kline.length-1]; let prevK = kline[kline.length-2];
-            let lastKD = kd[kd.length-1]; let prevKD = kd[kd.length-2];
-            let lastM = macd[macd.length-1]; let prevM = macd[macd.length-2];
-            
-            let kdElS = document.getElementById('t-kd-s'), kdElD = document.getElementById('t-kd-d');
-            if (lastKD.k > lastKD.d) { kdElS.className = 'status-up'; kdElS.innerHTML = '↗ 多頭'; kdElD.innerText = 'K>D'; }
-            else { kdElS.className = 'status-down'; kdElS.innerHTML = '↘ 空頭'; kdElD.innerText = 'K<D'; }
-            if (prevKD.k <= prevKD.d && lastKD.k > lastKD.d) kdElD.innerText = '剛金叉';
-
-            let mElS = document.getElementById('t-macd-s'), mElD = document.getElementById('t-macd-d');
-            if (lastM.osc > 0) { mElS.className = 'status-up'; mElS.innerHTML = '↗ 多頭'; mElD.innerText = lastM.osc>prevM.osc?'紅柱擴大':'紅柱縮小'; } 
-            else { mElS.className = 'status-down'; mElS.innerHTML = '↘ 空頭'; mElD.innerText = lastM.osc<prevM.osc?'綠柱擴大':'綠柱縮小'; }
-
-            let maElS = document.getElementById('t-ma-s'), maElD = document.getElementById('t-ma-d');
-            if (lastK.ma5 > lastK.ma20 && lastK.ma20 > lastK.ma60) { maElS.className = 'status-up'; maElS.innerHTML = '↗ 多頭'; maElD.innerText = '5>20>60'; }
-            else if (lastK.ma5 < lastK.ma20 && lastK.ma20 < lastK.ma60) { maElS.className = 'status-down'; maElS.innerHTML = '↘ 空頭'; maElD.innerText = '5<20<60'; }
-            else { maElS.className = 'status-flat'; maElS.innerHTML = '→ 糾結'; maElD.innerText = '等待表態'; }
-
-            let bbElS = document.getElementById('t-bb-s'), bbElD = document.getElementById('t-bb-d');
-            if (lastK.close > lastK.ma20) { bbElS.className = 'status-up'; bbElS.innerHTML = '↗ 偏強'; bbElD.innerText = '站上中軌'; }
-            else { bbElS.className = 'status-down'; bbElS.innerHTML = '↘ 偏弱'; bbElD.innerText = '跌破中軌'; }
-        }
-
-        function updateCalc() {
-            let eps = parseFloat(document.getElementById('slider-eps').value); let pe = parseFloat(document.getElementById('slider-pe').value);
-            document.getElementById('calc-eps-val').innerText = eps.toFixed(2); document.getElementById('calc-pe-val').innerText = pe.toFixed(1);
-            let tp = eps * pe; document.getElementById('calc-result').innerText = tp.toFixed(2);
-            if(currentAnalysis.price > 0) {
-                let diff = ((tp - currentAnalysis.price) / currentAnalysis.price) * 100; let sEl = document.getElementById('calc-status');
-                if(diff > 10) { sEl.innerText = `潛在: +${diff.toFixed(1)}%`; sEl.style.color = "var(--red)"; } 
-                else if(diff < -10) { sEl.innerText = `溢價: ${diff.toFixed(1)}%`; sEl.style.color = "var(--green)"; } 
-                else { sEl.innerText = `合理估值`; sEl.style.color = "var(--orange)"; }
-            }
         }
 
         function runBacktest(klineData, kdData, macdData) {
