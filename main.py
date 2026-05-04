@@ -19,7 +19,6 @@ api_key = os.environ.get("GOOGLE_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
 
-# 內建翻譯字典：強制將 yfinance 的英文轉回中文
 STOCK_DICT = {
     "2382": "廣達", "3231": "緯創", "2376": "技嘉", "3324": "雙鴻", "3017": "奇鋐",
     "3661": "世芯-KY", "3131": "弘塑", "6187": "萬潤", "6683": "雍智科技", "3583": "辛耘",
@@ -41,7 +40,7 @@ RADAR_WATCHLIST = [s for group in SECTORS.values() for s in group] + ['2330.TW',
 
 @app.route('/')
 def home():
-    return "AI 戰情室大腦運轉中！(搭載中文翻譯與本地備援大腦)"
+    return "AI 戰情室大腦運轉中！(搭載最高階操盤手 Prompt 與嚴謹邏輯模塊)"
 
 def fetch_stock_basic(symbol):
     try:
@@ -56,11 +55,8 @@ def fetch_stock_basic(symbol):
             curr = df.iloc[-1]['Close']
             prev = df.iloc[-2]['Close']
             change_pct = ((curr - prev) / prev) * 100
-            
             pure_sym = symbol.split('.')[0]
-            # 強制使用中文翻譯字典
             name = STOCK_DICT.get(pure_sym, stock.info.get('shortName', pure_sym))
-            
             return {"symbol": pure_sym, "name": name, "price": round(curr, 2), "change": round(change_pct, 2)}
     except: pass
     return None
@@ -211,7 +207,9 @@ def predict():
                         chip_chart_data.append({"time": t_str, "value": round(r['合計']/1000, 2)})
                         foreign_data.append({"time": t_str, "value": round(r['外資']/1000, 2)})
                         trust_data.append({"time": t_str, "value": round(r['投信']/1000, 2)})
-                    chip_info = pv.tail(3).to_string() 
+                    
+                    # 提速：給 AI 看近 5 日籌碼即可判斷意圖
+                    chip_info = pv.tail(5).to_string() 
                     for _, r in pv.tail(10).iloc[::-1].iterrows():
                         chip_table_data.append({"date": str(r['date'])[5:], "foreign": round(r['外資']/1000,1), "trust": round(r['投信']/1000,1), "dealer": round(r['自營']/1000,1), "total": round(r['合計']/1000,1)})
             except: pass
@@ -219,42 +217,52 @@ def predict():
         tech_str = df[['Close', 'MA20', 'OSC', 'K', 'D']].tail(3).to_string()
         last_row = df.iloc[-1]
 
-        # === 【終極本地備援大腦】 ===
-        # 若 AI 當機，這套量化邏輯會確保版面絕對有精準數據
-        fallback_signal = "震盪"
-        if last_row['K'] > last_row['D'] and last_row['Close'] > last_row['MA20']: fallback_signal = "偏多"
-        elif last_row['K'] < last_row['D'] and last_row['Close'] < last_row['MA20']: fallback_signal = "偏空"
+        # === 【最高階量化操盤手提示詞 (God-Tier Prompt)】 ===
+        # 嚴格約束 AI 的思考路徑，禁止腦補，要求精準解讀主力意圖
+        prompt = (
+            f"你是一位具備 20 年實戰經驗的台股頂級量化操盤手，專精於「價格行為」、「籌碼微結構」與「風險報酬比」精算。\n"
+            f"請分析 {display_name} ({pure_symbol}) 的近期數據。\n\n"
+            f"【核心判讀規則】：\n"
+            f"1. 趨勢與型態：依據技術面數據判定。若無明確的雙底(W)或雙頂(M)，必須客觀回報「未形成標準型態」或「區間震盪」，嚴禁過度腦補。\n"
+            f"2. 籌碼解構：檢視籌碼面，不可只報數字，必須解讀背後意圖（如：外資連續佈局、投信逢高結帳、土洋對作）。\n"
+            f"3. 機率評估：依據技術動能與籌碼流向互抵結果，給出明日上漲、下跌、震盪的具體機率 (總和必須精準等於 100)。\n"
+            f"4. 實戰劇本：明確訂出具備防守邏輯的「突破買點」、「區間操作點」、「嚴格停損點」。\n\n"
+            f"務必只輸出純 JSON，格式如下 (絕對不可包含 Markdown 或額外文字)：\n"
+            f"{{\n"
+            f"  \"signal\": \"偏多/偏空/震盪\", \"pressure\": \"壓力價\", \"support\": \"支撐價\", \"stop_loss\": \"停損參考價\",\n"
+            f"  \"prob_up\": 45, \"prob_down\": 25, \"prob_flat\": 30,\n"
+            f"  \"pattern_kline\": \"嚴謹型態判定(10字內)\", \"pattern_trend\": \"均線與布林狀態(10字內)\",\n"
+            f"  \"chip_status\": \"法人主力意圖精簡結論(15字內)\",\n"
+            f"  \"industry_desc\": \"所屬產業模塊(10字內)\", \"related_stocks\": \"代表性連動概念股\",\n"
+            f"  \"scenario_up\": {{\"price\": \"突破價\", \"action\": \"向上突破策略\"}},\n"
+            f"  \"scenario_flat\": {{\"price\": \"區間價\", \"action\": \"震盪盤整策略\"}},\n"
+            f"  \"scenario_down\": {{\"price\": \"跌破價\", \"action\": \"防守停損策略\"}},\n"
+            f"  \"stars\": 3, \"advice\": [\"趨勢與籌碼深度綜合總結1\", \"操作風險管控提示2\"]\n"
+            f"}}\n\n"
+            f"基本面：{fun_data}\n技術面：{tech_str}\n籌碼面：{chip_info}"
+        )
+        
+        # 本地端備援大腦
+        fallback_signal = "區間震盪"
+        if last_row['K'] > last_row['D'] and last_row['Close'] > last_row['MA20']: fallback_signal = "多頭格局"
+        elif last_row['K'] < last_row['D'] and last_row['Close'] < last_row['MA20']: fallback_signal = "空頭弱勢"
         
         ai_data = {
             "signal": fallback_signal, 
             "pressure": str(round(last_row['BB_upper'], 2)), 
             "support": str(round(last_row['BB_lower'], 2)), 
             "stop_loss": str(round(last_row['MA20'], 2)), 
-            "prob_up": 45 if fallback_signal == "偏多" else 25, 
-            "prob_down": 25 if fallback_signal == "偏多" else 45, 
+            "prob_up": 45 if fallback_signal == "多頭格局" else 25, 
+            "prob_down": 25 if fallback_signal == "多頭格局" else 45, 
             "prob_flat": 30,
-            "pattern_kline": "量化計算中", "pattern_trend": "量化計算中", "industry_desc": "台股上市櫃", "related_stocks": "同族群個股",
-            "scenario_up": {"price": str(round(last_row['BB_upper'], 2)), "action": "突破上軌可偏多操作"}, 
-            "scenario_flat": {"price": str(round(last_row['Close'], 2)), "action": "區間整理，高出低進"}, 
-            "scenario_down": {"price": str(round(last_row['MA20'], 2)), "action": "跌破月線請嚴格防守"},
-            "stars": 3, "advice": ["Google AI 連線逾時，已啟動本地量化備援大腦", "此為純技術指標推演，請搭配籌碼判斷"]
+            "pattern_kline": "量化模型計算中", "pattern_trend": "均線與布林計算中", 
+            "chip_status": "請參考左方三大法人明細", # 新增籌碼狀態欄位
+            "industry_desc": "台股上市櫃", "related_stocks": "同族群個股",
+            "scenario_up": {"price": str(round(last_row['BB_upper'], 2)), "action": "突破上軌順勢偏多"}, 
+            "scenario_flat": {"price": str(round(last_row['Close'], 2)), "action": "均線附近來回操作"}, 
+            "scenario_down": {"price": str(round(last_row['MA20'], 2)), "action": "跌破月線嚴格停損"},
+            "stars": 3, "advice": ["AI 雲端連線逾時，已自動切換本地量化備援大腦", "此為純技術指標運算結果，請親自搭配籌碼流向判斷"]
         }
-
-        # 嘗試呼叫 AI
-        prompt = (
-            f"你是專業操盤手。分析 {display_name} ({pure_symbol})。\n"
-            f"務必只輸出純 JSON，格式如下：\n"
-            f"{{\n"
-            f"  \"signal\": \"多/空/震盪\", \"pressure\": \"壓力價\", \"support\": \"支撐價\", \"stop_loss\": \"停損價\",\n"
-            f"  \"prob_up\": 40, \"prob_down\": 30, \"prob_flat\": 30,\n"
-            f"  \"pattern_kline\": \"K線(10字內)\", \"pattern_trend\": \"均線(10字內)\",\n"
-            f"  \"industry_desc\": \"產業(10字內)\", \"related_stocks\": \"概念股\",\n"
-            f"  \"scenario_up\": {{\"price\": \"突破價\", \"action\": \"建議\"}},\n"
-            f"  \"scenario_flat\": {{\"price\": \"震盪價\", \"action\": \"建議\"}},\n"
-            f"  \"scenario_down\": {{\"price\": \"防守價\", \"action\": \"建議\"}}\n"
-            f"}}\n"
-            f"技術面：{tech_str}\n籌碼：{chip_info}"
-        )
         
         try:
             model = genai.GenerativeModel('gemini-1.5-flash')
@@ -264,11 +272,10 @@ def predict():
             if match:
                 try:
                     parsed = json.loads(match.group(0))
-                    # 覆蓋備援資料
                     for k, v in parsed.items():
                         if k in ai_data: ai_data[k] = v
                 except:
-                    # JSON 崩潰時的 Regex 終極暴力挖礦
+                    # JSON 解析失敗的暴力 Regex 挖礦 (包含新增的 chip_status)
                     t = match.group(0)
                     def ext_str(key, default): 
                         m = re.search(f'"{key}"\s*:\s*"([^"]+)"', t)
@@ -281,8 +288,9 @@ def predict():
                     ai_data["pressure"] = ext_str("pressure", ai_data["pressure"])
                     ai_data["support"] = ext_str("support", ai_data["support"])
                     ai_data["stop_loss"] = ext_str("stop_loss", ai_data["stop_loss"])
-                    ai_data["pattern_kline"] = ext_str("pattern_kline", "等待表態")
+                    ai_data["pattern_kline"] = ext_str("pattern_kline", "未形成標準型態")
                     ai_data["pattern_trend"] = ext_str("pattern_trend", "均線整理")
+                    ai_data["chip_status"] = ext_str("chip_status", "法人動向不明")
                     ai_data["industry_desc"] = ext_str("industry_desc", "台股重點板塊")
                     ai_data["related_stocks"] = ext_str("related_stocks", "--")
                     
@@ -298,7 +306,8 @@ def predict():
                             a_match = re.search(r'"action"\s*:\s*"([^"]+)"', in_text)
                             if p_match: ai_data[sc]["price"] = p_match.group(1)
                             if a_match: ai_data[sc]["action"] = a_match.group(1)
-        except Exception as e: print("AI 解析失敗，使用備援資料", e)
+                    ai_data["advice"] = ["AI 系統已透過暴力演算法萃取部分資料", "建議搭配圖表自行確認"]
+        except Exception as e: print("AI 處理異常，啟用備援", e)
 
         return jsonify({
             "status": "success", "symbol": symbol, "current_price": current_price, "interval": interval,
