@@ -18,7 +18,7 @@
         .top-bar { flex: 0 0 45px; display: flex; justify-content: space-between; align-items: center; background: var(--panel-bg); padding: 0 15px; border-radius: 4px; border: 1px solid var(--border-color); margin-bottom: 8px; box-shadow: 0 0 10px rgba(30,58,138,0.3); }
         .search-group { display: flex; gap: 8px; align-items: center; }
         input[type="text"], input[type="number"], select { padding: 6px 10px; background: #020617; border: 1px solid var(--border-color); color: white; border-radius: 4px; outline: none; font-weight: bold; font-size: 13px; }
-        button { padding: 6px 15px; border: none; border-radius: 4px; font-weight: bold; font-size: 13px; cursor: pointer; color: white; transition: 0.2s; }
+        button { padding: 6px 15px; border: none; border-radius: 4px; font-weight: bold; font-size: 13px; cursor: pointer; color: white; transition: 0.2s; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
         .btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); border: 1px solid #3b82f6; } .btn-primary:hover { background: #1e40af; }
         .btn-radar { background: linear-gradient(135deg, #7c3aed, #5b21b6); border: 1px solid #8b5cf6; } .btn-radar:hover { background: #4c1d95; }
         .btn-sector { background: linear-gradient(135deg, #059669, #047857); border: 1px solid #10b981; } .btn-sector:hover { background: #065f46; }
@@ -59,7 +59,6 @@
         .ai-quant-row { display: flex; gap: 8px; }
         .ai-quant-box { flex: 1; background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
         
-        /* === 【修復區】：解決儀表板文字重疊 === */
         .gauge-container { display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; padding-bottom: 30px; margin-top: 15px; }
         .gauge-arc { width: 100px; height: 50px; border-radius: 100px 100px 0 0; background: conic-gradient(from 270deg, var(--red) 0% 50%, var(--green) 50% 100%); position: relative; }
         .gauge-arc::after { content: ''; position: absolute; bottom: 0; left: 15px; width: 70px; height: 35px; background: #020617; border-radius: 70px 70px 0 0; }
@@ -102,10 +101,12 @@
         .pf-box .val { font-size: 14px; font-weight: bold; color: white; font-family: monospace; }
         .pf-table-wrapper { flex: 1; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 4px; background: #020617; }
         .pf-table th { position: sticky; top: 0; background: var(--panel-bg); font-size: 10px; z-index: 1;}
-        .pf-table td { font-size: 11px; padding: 4px; }
-
+        .pf-table td { font-size: 11px; padding: 4px; text-align: center;}
+        
+        .txt-red { color: var(--red); } .txt-green { color: var(--green); }
         #sysMessage { font-size: 12px; color: var(--cyan); position: absolute; top: 15px; left: 50%; transform: translateX(-50%); font-weight: bold;}
         
+        /* Modal 通用 */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: none; justify-content: center; align-items: center; }
         .modal-content { background: var(--panel-bg); border: 1px solid var(--blue); border-radius: 8px; width: 450px; padding: 15px; max-height: 80vh; display:flex; flex-direction:column; }
         .modal-header { font-size: 16px; font-weight: bold; color: white; margin-bottom: 10px; display: flex; justify-content: space-between; }
@@ -115,10 +116,7 @@
         .sector-item { display: flex; justify-content: space-between; padding: 6px; border-bottom: 1px solid #0f172a; cursor: pointer; transition: 0.2s;}
         .sector-item:hover { background: #0f172a; }
         .sector-item:last-child { border-bottom: none; }
-        
         .radar-list { list-style: none; padding: 0; margin: 0; max-height: 250px; overflow-y: auto; }
-        .radar-item { background: #0b0e14; margin-bottom: 6px; padding: 10px; border-radius: 4px; display: flex; justify-content: space-between; border: 1px solid var(--border-color); cursor: pointer; }
-        .radar-item:hover { border-color: var(--cyan); }
     </style>
 </head>
 <body>
@@ -197,6 +195,11 @@
             <div class="info-card" id="chipTableCard" style="padding: 6px;">
                 <div class="card-header" style="margin-bottom: 4px;">🏦 法人近 10 日(張)</div>
                 <table class="chip-table"><thead><tr><th>日期</th><th>外</th><th>投</th><th>自</th><th>計</th></tr></thead><tbody id="chipTableBody"></tbody></table>
+                <!-- 全新：籌碼結論區塊 -->
+                <div style="background:#020617; border: 1px dashed var(--cyan); border-radius:4px; padding: 6px; margin-top: 6px; text-align:center;">
+                    <div style="font-size:10px; color:var(--text-muted); margin-bottom: 2px;">主力籌碼解讀 (AI)</div>
+                    <div id="ai-chip-status" style="font-size:12px; font-weight:bold; color:white;">--</div>
+                </div>
             </div>
 
             <div class="info-card" style="border-color: var(--blue); padding: 8px;">
@@ -238,6 +241,7 @@
                     <div style="font-size:10px; color:var(--text-muted); display:flex; justify-content:space-between;"><span>產業鏈: <b id="ai-industry" style="color:white;">--</b></span><span>壓力: <b id="ai-pressure" style="color:var(--green);">--</b></span></div>
                     <div class="industry-link" id="ai-related">--</div>
                 </div>
+                <ul id="ai-advice" class="advice-list" style="margin-top:8px;"></ul>
             </div>
             
             <div class="info-card" style="border-color: var(--green); padding: 8px;">
@@ -324,7 +328,7 @@
             
             document.getElementById('mainGrid').style.display = "none"; document.getElementById('priceZone').style.display = "none";
             btn.disabled = true; btn.innerText = "掃描中...";
-            sysMsg.innerText = '🔄 AI 深度解析中 (若初次喚醒需時約50秒)...';
+            sysMsg.innerText = '🔄 高階量化模型推演中...';
             
             try {
                 const res = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${symbol}&interval=${interval}`);
@@ -361,6 +365,10 @@
                     document.getElementById('ai-pattern-k').innerText = `${ai.pattern_kline || '--'} / ${ai.pattern_trend || '--'}`;
                     document.getElementById('ai-industry').innerText = ai.industry_desc || '--';
                     document.getElementById('ai-related').innerText = ai.related_stocks || '--';
+                    
+                    // 填入籌碼短評
+                    document.getElementById('ai-chip-status').innerText = ai.chip_status || '法人動態不明';
+                    document.getElementById('ai-advice').innerHTML = Array.isArray(ai.advice) ? ai.advice.map(t => `<li>${t}</li>`).join('') : `<li>${ai.advice}</li>`;
 
                     let pup = ai.prob_up || 33; let pdown = ai.prob_down || 33; let pflat = ai.prob_flat || 34;
                     document.getElementById('p-up').innerText = pup + "%"; document.getElementById('p-down').innerText = pdown + "%"; document.getElementById('p-flat').innerText = pflat + "%";
