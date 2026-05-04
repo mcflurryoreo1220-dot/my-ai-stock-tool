@@ -23,7 +23,7 @@ RADAR_WATCHLIST = ['2330.TW', '2317.TW', '2454.TW', '2382.TW', '3231.TW', '2603.
 
 @app.route('/')
 def home():
-    return "AI 戰情室大腦運轉中！(搭載高階劇本與產業連動分析)"
+    return "AI 戰情室大腦運轉中！(搭載布林通道與AI機率預測引擎)"
 
 def check_radar_symbol(symbol):
     try:
@@ -91,10 +91,17 @@ def predict():
 
         if df.empty: return jsonify({"status": "error", "message": "查無資料，請確認代碼"}), 400
 
+        # === 計算所有技術指標 (含新增的布林通道) ===
         df['MA5'] = df['Close'].rolling(window=5).mean()
         df['MA10'] = df['Close'].rolling(window=10).mean()
         df['MA20'] = df['Close'].rolling(window=20).mean()
         df['MA60'] = df['Close'].rolling(window=60).mean()
+        
+        # 布林通道 (Bollinger Bands)
+        df['BB_std'] = df['Close'].rolling(window=20).std()
+        df['BB_upper'] = df['MA20'] + 2 * df['BB_std']
+        df['BB_lower'] = df['MA20'] - 2 * df['BB_std']
+
         df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
         df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
         df['DIF'] = df['EMA12'] - df['EMA26']
@@ -117,7 +124,11 @@ def predict():
         chart_data, macd_data, kd_data, obv_data = [], [], [], []
         for date, row in df.tail(80).iterrows():
             tv = date.strftime('%Y-%m-%d') if interval == '1d' else int(date.timestamp())
-            chart_data.append({"time": tv, "open": round(row['Open'],2), "high": round(row['High'],2), "low": round(row['Low'],2), "close": round(row['Close'],2), "ma5": row['MA5'], "ma20": row['MA20'], "ma60": row['MA60']})
+            chart_data.append({
+                "time": tv, "open": round(row['Open'],2), "high": round(row['High'],2), "low": round(row['Low'],2), "close": round(row['Close'],2), 
+                "ma5": row['MA5'], "ma20": row['MA20'], "ma60": row['MA60'],
+                "bb_upper": row['BB_upper'], "bb_lower": row['BB_lower'] # 輸出布林通道
+            })
             macd_data.append({"time": tv, "dif": row['DIF'], "signal": row['MACD_Signal'], "osc": row['OSC']})
             kd_data.append({"time": tv, "k": row['K'], "d": row['D']})
             obv_data.append({"time": tv, "value": row['OBV']})
@@ -159,18 +170,18 @@ def predict():
                         chip_table_data.append({"date": str(r['date'])[5:], "foreign": round(r['外資']/1000,1), "trust": round(r['投信']/1000,1), "dealer": round(r['自營']/1000,1), "total": round(r['合計']/1000,1)})
             except: pass
 
+        # === 【核心升級：要求 AI 預測漲跌機率】 ===
         prompt = (
             f"你是一位精通全球產業鏈的台股量化操盤手。分析 {display_name} ({pure_symbol})。\n"
             f"請輸出 JSON，不要有任何 Markdown。\n"
             f"{{\n"
             f"  \"signal\": \"偏多/偏空/震盪\",\n  \"pressure\": \"壓力價\",\n  \"support\": \"支撐價\",\n  \"stop_loss\": \"停損價\",\n"
-            f"  \"pattern_kline\": \"描述近期K線型態(如:量縮整理/長紅突破/高檔震盪,限10字)\",\n"
-            f"  \"pattern_trend\": \"描述均線排列(如:多頭排列/跌破月線,限10字)\",\n"
-            f"  \"industry_desc\": \"描述所屬產業模塊(如:半導體設備/蘋概股,限15字)\",\n"
-            f"  \"related_stocks\": \"列出3-4檔連動概念股(包含具代表性的美股或台股，如:NVDA輝達, 2330台積電)\",\n"
-            f"  \"scenario_up\": {{\"price\": \"突破價\", \"action\": \"突破後的建議操作(限15字)\"}},\n"
-            f"  \"scenario_flat\": {{\"price\": \"震盪價\", \"action\": \"盤整時的建議操作(限15字)\"}},\n"
-            f"  \"scenario_down\": {{\"price\": \"防守價\", \"action\": \"跌破後的建議操作(限15字)\"}},\n"
+            f"  \"prob_up\": 上漲機率(整數,例如 60),\n  \"prob_down\": 下跌機率(整數,例如 25),\n  \"prob_flat\": 震盪機率(整數,例如 15, 三者相加須為100),\n"
+            f"  \"pattern_kline\": \"描述近期K線型態(限10字)\",\n  \"pattern_trend\": \"描述均線排列(限10字)\",\n"
+            f"  \"industry_desc\": \"描述所屬產業模塊(限15字)\",\n  \"related_stocks\": \"列出3-4檔連動概念股\",\n"
+            f"  \"scenario_up\": {{\"price\": \"突破價\", \"action\": \"建議操作(限15字)\"}},\n"
+            f"  \"scenario_flat\": {{\"price\": \"震盪價\", \"action\": \"建議操作(限15字)\"}},\n"
+            f"  \"scenario_down\": {{\"price\": \"防守價\", \"action\": \"建議操作(限15字)\"}},\n"
             f"  \"stars\": 1到5的整數,\n  \"advice\": [\"總結建議1\", \"總結建議2\"]\n"
             f"}}\n\n"
             f"基本面：{fun_data}\n技術面：{df.tail(10).to_string()}\n籌碼面：{chip_info}"
@@ -190,6 +201,7 @@ def predict():
                 
         if not ai_data:
             ai_data = {"signal": "等待連線", "pressure": "--", "support": "--", "stop_loss": "--", 
+                       "prob_up": 33, "prob_down": 33, "prob_flat": 34,
                        "pattern_kline": "解析中", "pattern_trend": "解析中", "industry_desc": "解析中", "related_stocks": "解析中",
                        "scenario_up": {"price":"--", "action":"--"}, "scenario_flat": {"price":"--", "action":"--"}, "scenario_down": {"price":"--", "action":"--"},
                        "stars": 0, "advice": ["請稍後重新點擊分析"]}
