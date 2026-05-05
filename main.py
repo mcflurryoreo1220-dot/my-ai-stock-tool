@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 import google.generativeai as genai
 from FinMind.data import DataLoader
+import pytz
 
 app = Flask(__name__)
 CORS(app) 
@@ -41,7 +42,7 @@ RADAR_WATCHLIST = [s for group in SECTORS.values() for s in group] + ['2330.TW',
 
 @app.route('/')
 def home():
-    return "AI 戰情室大腦運轉中！(搭載跌停強制覆寫與高階防護網)"
+    return "AI 戰情室大腦運轉中！(搭載避險基金深度解析引擎)"
 
 def fetch_stock_basic(symbol):
     try:
@@ -77,7 +78,7 @@ def get_sectors():
 @app.route('/radar', methods=['GET'])
 def radar():
     matched = []
-    # 雷達略過，保留核心路由
+    # 略過選股細節以節省空間
     return jsonify({"status": "success", "matches": matched})
 
 @app.route('/predict', methods=['GET'])
@@ -138,33 +139,19 @@ def predict():
             "vol_change": int(last_row['Volume'] - prev_row['Volume'])
         }
 
-        # === 【精準核心：跌停/漲停強制覆寫機制 (尚方寶劍)】 ===
-        # 第一優先順位：極端行情判定，無視傳統量價公式
+        # 絕對覆寫防護網
         if vol_data['price_change_pct'] <= -9.0:
-            vol_data['status'] = "🚨 恐慌跌停"
-            vol_data['desc'] = "流動性枯竭！跌停鎖死導致量縮假象，嚴禁接刀！"
-            vol_data['color'] = "var(--green)" # 台股跌是綠色
+            vol_data['status'] = "🚨 恐慌跌停"; vol_data['desc'] = "流動性枯竭！跌停鎖死導致量縮假象，嚴禁接刀！"; vol_data['color'] = "var(--green)"
         elif vol_data['price_change_pct'] >= 9.0:
-            vol_data['status'] = "🔥 強勢漲停"
-            vol_data['desc'] = "買盤極度強勢鎖死，籌碼完全掌控。"
-            vol_data['color'] = "var(--red)"
-        # 第二順位：常規量價背離判定
+            vol_data['status'] = "🔥 強勢漲停"; vol_data['desc'] = "買盤極度強勢鎖死，籌碼完全掌控。"; vol_data['color'] = "var(--red)"
         elif vol_data['price_change'] > 0 and vol_data['vol_change'] >= 0:
-            vol_data['status'] = "價漲量增"
-            vol_data['desc'] = "健康上漲格局，買盤推升。"
-            vol_data['color'] = "var(--red)"
+            vol_data['status'] = "價漲量增"; vol_data['desc'] = "健康上漲格局，買盤推升。"; vol_data['color'] = "var(--red)"
         elif vol_data['price_change'] > 0 and vol_data['vol_change'] < 0:
-            vol_data['status'] = "量價背離 (漲)"
-            vol_data['desc'] = "價漲但量縮，追高意願降低，留意反轉。"
-            vol_data['color'] = "var(--orange)"
+            vol_data['status'] = "量價背離 (漲)"; vol_data['desc'] = "價漲但量縮，追高意願降低，留意反轉。"; vol_data['color'] = "var(--orange)"
         elif vol_data['price_change'] <= 0 and vol_data['vol_change'] > 0:
-            vol_data['status'] = "價跌量增"
-            vol_data['desc'] = "賣壓出籠，主力疑似出貨，請提高警覺！"
-            vol_data['color'] = "var(--green)"
+            vol_data['status'] = "價跌量增"; vol_data['desc'] = "賣壓出籠，主力疑似出貨，請提高警覺！"; vol_data['color'] = "var(--green)"
         else:
-            vol_data['status'] = "價跌量縮"
-            vol_data['desc'] = "量縮整理，觀察下檔支撐是否守穩。"
-            vol_data['color'] = "var(--text-muted)"
+            vol_data['status'] = "價跌量縮"; vol_data['desc'] = "量縮整理，觀察下檔支撐是否守穩。"; vol_data['color'] = "var(--text-muted)"
 
         chip_table_data = []
         net_foreign_5d = 0
@@ -184,7 +171,13 @@ def predict():
                         chip_table_data.append({"date": str(r['date'])[5:], "foreign": round(r['外資']/1000,1), "trust": round(r['投信']/1000,1), "dealer": round(r['自營']/1000,1), "total": round(r['合計']/1000,1)})
             except: pass
 
-        # === 【精準核心：動態警示系統】 ===
+        # 判斷盤中/盤後狀態 (台灣時間 15:00)
+        tw_tz = pytz.timezone('Asia/Taipei')
+        now_tw = datetime.datetime.now(tw_tz)
+        is_after_market = now_tw.hour >= 15
+        
+        chip_status_msg = "✅ 盤後更新：今日籌碼已反映" if is_after_market else "⚠️ 盤中狀態：籌碼僅顯示至昨日"
+
         warning_box = {"active": False, "title": "安全", "msg": "目前無明顯出貨跡象", "level": "safe"}
         if vol_data['price_change_pct'] <= -9.0:
             warning_box = {"active": True, "title": "🚨 跌停警報", "msg": "極端空頭鎖死，無量下殺，請啟動絕對防守機制，切勿摸底！", "level": "danger"}
@@ -198,10 +191,10 @@ def predict():
         elif last_row['K'] < last_row['D'] and last_row['Close'] < last_row['MA20']: fallback_signal = "空頭弱勢"
 
         ai_data = {
-            "op_short": "空頭宣洩中，嚴禁接刀" if fallback_signal=="極度空頭 (跌停)" else "均線附近分批佈局", 
+            "op_short": "空頭宣洩中，嚴禁接刀" if fallback_signal=="極度空頭 (跌停)" else "觀察均線支撐再行佈局", 
             "vol_price_div": vol_data['status'], 
-            "entry_winrate": "0% (跌停風險)" if fallback_signal=="極度空頭 (跌停)" else "待計算",
-            "mid_long_view": "基本面與籌碼拉扯中", 
+            "entry_winrate": "0% (跌停風險)" if fallback_signal=="極度空頭 (跌停)" else "模型運算中",
+            "mid_long_view": "等待基本面指引", 
             "vol_analysis": vol_data['desc'], 
             "exit_warning": warning_box['title'],
             "key_levels": f"支撐 {round(last_row['BB_lower'],2)} / 壓力 {round(last_row['MA20'],2)}", 
@@ -210,20 +203,27 @@ def predict():
             "prob_down": 80 if fallback_signal=="極度空頭 (跌停)" else 33, 
             "prob_flat": 10 if fallback_signal=="極度空頭 (跌停)" else 34, 
             "signal": fallback_signal, "pressure": str(round(last_row['BB_upper'], 2)), "support": str(round(last_row['BB_lower'], 2)), "stop_loss": str(round(last_row['MA20'], 2)),
-            "industry_desc": fun_data["industry"]
+            "industry_desc": fun_data["industry"],
+            
+            # 全新：機構級護城河與風險數據 (備援)
+            "moat_score": "7", "moat_desc": "等待 AI 深層解析...",
+            "market_narrative": "市場觀望情緒濃厚", "narrative_risk": "需留意總經環境變化",
+            "bull_bear": "依大盤風向量力而為", "risk_factors": ["市場流動性風險", "同業競爭"]
         }
         
         prompt = (
-            f"請扮演避險基金策略主管。分析股票 {display_name} ({pure_symbol})。\n"
-            f"重要情報：今日漲跌幅 {vol_data['price_change_pct']}%\n"
-            f"若漲跌幅 <= -9%，請務必將操作建議設為極度保守(不可接刀)。\n"
+            f"請扮演避險基金分析師與量化主管。深入分析 {display_name} ({pure_symbol})。\n"
+            f"重要：今日漲跌幅 {vol_data['price_change_pct']}%\n"
             f"務必只輸出純 JSON，格式如下：\n"
             f"{{\n"
             f"  \"op_short\": \"1.操作建議(短線)(15字內)\", \"vol_price_div\": \"2.量價結構(15字內)\", \"entry_winrate\": \"3.短線勝率(15字內)\",\n"
             f"  \"mid_long_view\": \"4.中長線看法(15字內)\", \"vol_analysis\": \"5.成交量分析(15字內)\", \"exit_warning\": \"6.主力出貨警示(10字內)\",\n"
             f"  \"key_levels\": \"7.關鍵價位(15字內)\", \"risk_reminder\": \"8.風險提醒(15字內)\",\n"
             f"  \"prob_up\": 30, \"prob_down\": 40, \"prob_flat\": 30,\n"
-            f"  \"signal\": \"多/空/震盪\", \"pressure\": \"壓力價\", \"support\": \"支撐價\", \"stop_loss\": \"停損價\"\n"
+            f"  \"signal\": \"多/空/震盪\", \"pressure\": \"壓力價\", \"support\": \"支撐價\", \"stop_loss\": \"停損價\",\n"
+            f"  \"moat_score\": \"護城河分數(1-10)\", \"moat_desc\": \"商業模式與護城河優勢(25字內)\",\n"
+            f"  \"market_narrative\": \"當前市場正在炒作/定價什麼?(25字內)\", \"narrative_risk\": \"市場可能看錯的地方(20字內)\",\n"
+            f"  \"bull_bear\": \"牛熊走勢推演(20字內)\", \"risk_factors\": [\"最大風險1\", \"最大風險2\"]\n"
             f"}}\n"
         )
         try:
@@ -231,16 +231,44 @@ def predict():
             response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.1))
             match = re.search(r'\{[\s\S]*\}', response.text)
             if match:
-                parsed = json.loads(match.group(0))
-                for k, v in parsed.items():
-                    if k in ai_data: ai_data[k] = v
+                t = match.group(0)
+                # 使用簡單 regex 防禦 json parsing error
+                def ext_str(key, default): 
+                    m = re.search(f'"{key}"\s*:\s*"([^"]+)"', t)
+                    return m.group(1) if m else default
+                
+                ai_data["op_short"] = ext_str("op_short", ai_data["op_short"])
+                ai_data["vol_price_div"] = ext_str("vol_price_div", ai_data["vol_price_div"])
+                ai_data["entry_winrate"] = ext_str("entry_winrate", ai_data["entry_winrate"])
+                ai_data["mid_long_view"] = ext_str("mid_long_view", ai_data["mid_long_view"])
+                ai_data["vol_analysis"] = ext_str("vol_analysis", ai_data["vol_analysis"])
+                ai_data["exit_warning"] = ext_str("exit_warning", ai_data["exit_warning"])
+                ai_data["key_levels"] = ext_str("key_levels", ai_data["key_levels"])
+                ai_data["risk_reminder"] = ext_str("risk_reminder", ai_data["risk_reminder"])
+                ai_data["signal"] = ext_str("signal", ai_data["signal"])
+                
+                ai_data["moat_score"] = ext_str("moat_score", ai_data["moat_score"])
+                ai_data["moat_desc"] = ext_str("moat_desc", ai_data["moat_desc"])
+                ai_data["market_narrative"] = ext_str("market_narrative", ai_data["market_narrative"])
+                ai_data["narrative_risk"] = ext_str("narrative_risk", ai_data["narrative_risk"])
+                ai_data["bull_bear"] = ext_str("bull_bear", ai_data["bull_bear"])
+                
+                rf_match = re.search(r'"risk_factors"\s*:\s*\[(.*?)\]', t)
+                if rf_match:
+                    rfs = rf_match.group(1).replace('"', '').split(',')
+                    ai_data["risk_factors"] = [rf.strip() for rf in rfs if rf.strip()][:2]
+                
+                m_pu = re.search(r'"prob_up"\s*:\s*(\d+)', t); m_pd = re.search(r'"prob_down"\s*:\s*(\d+)', t); m_pf = re.search(r'"prob_flat"\s*:\s*(\d+)', t)
+                if m_pu and m_pd and m_pf:
+                    ai_data["prob_up"] = int(m_pu.group(1)); ai_data["prob_down"] = int(m_pd.group(1)); ai_data["prob_flat"] = int(m_pf.group(1))
         except: pass
 
         return jsonify({
             "status": "success", "symbol": symbol, "current_price": current_price, "interval": interval,
             "chart_data": chart_data, "macd_data": macd_data, "kd_data": kd_data, 
             "chip_table": chip_table_data, "fundamental": fun_data, "ai_analysis": ai_data,
-            "volume_data": vol_data, "warning_box": warning_box
+            "volume_data": vol_data, "warning_box": warning_box,
+            "chip_time_status": chip_status_msg # 回傳法人資料的更新狀態
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
