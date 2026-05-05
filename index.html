@@ -3,258 +3,156 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 股票戰情室 - 機構深度透視版</title>
+    <title>AI 股票戰情室 - 戰術中樞版</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         :root { 
             --bg-dark: #020617; --panel-bg: #0a1128; --border-color: #1e3a8a; 
             --text-main: #e2e8f0; --text-muted: #94a3b8; 
             --blue: #3b82f6; --cyan: #06b6d4; --red: #ef4444; --green: #10b981; --orange: #f59e0b; 
-            --ma5: #fde047; --ma20: #f43f5e; --ma60: #06b6d4; --foreign: #fde047; --trust: #f43f5e;
-            --purple: #8b5cf6;
+            --ma5: #fde047; --ma20: #f43f5e; --ma60: #06b6d4;
         }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-dark); color: var(--text-main); margin: 0; padding: 8px; height: 100vh; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-dark); color: var(--text-main); margin: 0; padding: 6px; height: 100vh; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; }
         ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: var(--bg-dark); } ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
 
-        .top-bar { flex: 0 0 45px; display: flex; justify-content: space-between; align-items: center; background: var(--panel-bg); padding: 0 15px; border-radius: 4px; border: 1px solid var(--border-color); margin-bottom: 8px; }
+        .top-bar { flex: 0 0 42px; display: flex; justify-content: space-between; align-items: center; background: var(--panel-bg); padding: 0 12px; border-radius: 4px; border: 1px solid var(--border-color); margin-bottom: 6px; }
         .search-group { display: flex; gap: 8px; align-items: center; }
-        input[type="text"], select { padding: 6px 10px; background: #020617; border: 1px solid var(--border-color); color: white; border-radius: 4px; outline: none; font-weight: bold; font-size: 13px; }
-        button { padding: 6px 15px; border: none; border-radius: 4px; font-weight: bold; font-size: 13px; cursor: pointer; color: white; transition: 0.2s; }
+        input[type="text"], select { padding: 4px 10px; background: #020617; border: 1px solid var(--border-color); color: white; border-radius: 4px; outline: none; font-weight: bold; font-size: 13px; }
+        button { padding: 4px 12px; border: none; border-radius: 4px; font-weight: bold; font-size: 12px; cursor: pointer; color: white; transition: 0.2s; }
         .btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); border: 1px solid #3b82f6; } .btn-primary:hover { background: #1e40af; }
-        .btn-radar { background: linear-gradient(135deg, #7c3aed, #5b21b6); border: 1px solid #8b5cf6; } .btn-radar:hover { background: #4c1d95; }
-        .btn-sector { background: linear-gradient(135deg, #059669, #047857); border: 1px solid #10b981; } .btn-sector:hover { background: #065f46; }
-        button:disabled { background: var(--border-color); color: var(--text-muted); border: none; cursor: not-allowed; }
+        .btn-radar { background: linear-gradient(135deg, #7c3aed, #5b21b6); border: 1px solid #8b5cf6; }
+        .btn-sector { background: linear-gradient(135deg, #059669, #047857); border: 1px solid #10b981; }
+
+        .price-zone { display: none; align-items: baseline; gap: 10px; }
+        .current-price { font-size: 24px; font-weight: bold; }
+        .price-change { font-size: 14px; font-weight: bold; }
         
-        .price-zone { display: none; align-items: center; gap: 12px; }
-        .current-price { font-size: 26px; font-weight: bold; color: var(--red); text-shadow: 0 0 8px rgba(239,68,68,0.4); margin-bottom: 2px;}
-        
-        /* 調整比例，讓右側能放更多文字 */
-        .main-grid { flex: 1; display: grid; grid-template-columns: 13fr 9fr 13fr; gap: 8px; overflow: hidden; display: none; }
-        .column { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding-right: 2px; }
+        .main-grid { flex: 1; display: grid; grid-template-columns: 14fr 9fr 14fr; gap: 6px; overflow: hidden; display: none; }
+        .column { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; padding-right: 2px; }
         
         .chart-wrapper { background: var(--panel-bg); padding: 4px; border-radius: 4px; border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 2px; }
         .chart-box { position: relative; width: 100%; border-bottom: 1px solid #172554; }
         .chart-box:last-child { border-bottom: none; }
-        .chart-title { position: absolute; z-index: 2; padding: 2px 6px; font-size: 10px; background: rgba(2,6,23,0.8); color: var(--cyan); border: 1px solid #1e3a8a; top: 4px; left: 4px; display: flex; gap: 8px; align-items: center; border-radius: 2px; }
-        .legend-ma5 { color: var(--ma5); } .legend-ma20 { color: var(--ma20); } .legend-ma60 { color: var(--ma60); }
-        .legend-bb { color: var(--text-main); } .legend-for { color: var(--foreign); } .legend-tru { color: var(--trust); }
-        .chart-legend { position: absolute; z-index: 10; font-size: 11px; color: #fff; background: rgba(2,6,23,0.9); border-radius: 4px; top: 25px; left: 4px; padding: 4px; display: none; border: 1px solid var(--cyan); }
+        .chart-title { position: absolute; z-index: 2; padding: 2px 6px; font-size: 10px; background: rgba(2,6,23,0.8); color: var(--cyan); border: 1px solid #1e3a8a; top: 4px; left: 4px; border-radius: 2px; }
+        #mainChart { height: 360px; } .sub-chart { height: 100px; } 
         
-        #mainChart { height: 350px; } .sub-chart { height: 100px; } #chipChart { height: 120px; }
+        .info-card { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 6px 10px; }
+        .card-header { font-size: 12px; font-weight: bold; color: var(--cyan); border-bottom: 1px solid var(--border-color); padding-bottom: 4px; margin-bottom: 6px; }
+
+        .hub-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        .hub-item { background: #020617; border: 1px solid #1e293b; padding: 6px 8px; border-radius: 4px; }
+        .hub-lbl { font-size: 10px; color: var(--text-muted); margin-bottom: 2px; border-bottom: 1px solid #0f172a; display: block;}
+        .hub-val { font-size: 12px; font-weight: bold; color: white; line-height: 1.4; display: block; }
+        .hub-wide { grid-column: span 2; }
         
-        .info-card { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; }
-        .card-header { font-size: 12px; font-weight: bold; color: var(--cyan); border-bottom: 1px solid var(--border-color); padding-bottom: 4px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;}
-        
+        /* 警示燈專用 */
         .alert-box { border: 1px dashed var(--text-muted); background: #020617; border-radius: 4px; padding: 8px; text-align: center; margin-bottom: 6px; transition: 0.3s; }
         .alert-danger { border-color: var(--red); background: rgba(239,68,68,0.1); box-shadow: 0 0 10px rgba(239,68,68,0.3); }
+        .alert-warning { border-color: var(--orange); background: rgba(245,158,11,0.1); box-shadow: 0 0 10px rgba(245,158,11,0.3); }
         .alert-title { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
         .alert-danger .alert-title { color: var(--red); animation: blink 1s infinite alternate; }
+        .alert-warning .alert-title { color: var(--orange); }
         .alert-msg { font-size: 11px; color: var(--text-main); }
         @keyframes blink { from { opacity: 1; } to { opacity: 0.6; text-shadow: 0 0 10px var(--red); } }
 
-        .vol-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
-        .vol-item { background: #020617; padding: 6px; border-radius: 4px; border: 1px solid #1e293b; text-align: center;}
-        .vol-lbl { font-size: 10px; color: var(--text-muted); }
-        .vol-val { font-size: 14px; font-weight: bold; color: white; margin-top: 2px;}
-
-        .scenario-grid { display: flex; flex-direction: column; gap: 5px; }
-        .scenario-box { background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 6px 8px; display: flex; justify-content: space-between; align-items: center; }
-        .scenario-box .lbl { font-size: 11px; font-weight: bold; }
-        .scenario-box .act { font-size: 11px; color: var(--text-main); text-align: right; line-height: 1.2;}
-        .s-up .lbl { color: var(--red); } .s-flat .lbl { color: var(--orange); } .s-down .lbl { color: var(--green); }
-
-        .tech-table, .chip-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: center; }
-        .tech-table th, .chip-table th { background: #020617; padding: 4px; color: var(--text-muted); border-bottom: 1px solid var(--border-color); font-weight: normal; }
-        .tech-table td, .chip-table td { padding: 5px 4px; border-bottom: 1px solid #0f172a; }
-        .tech-table td:first-child { text-align: left; color: var(--text-muted); }
-        .tech-table td:last-child { text-align: left; }
-        .status-up { color: var(--red); font-weight: bold; } .status-down { color: var(--green); font-weight: bold; } .status-flat { color: var(--orange); font-weight: bold; }
-
-        .ai-quant-row { display: flex; gap: 8px; }
-        .ai-quant-box { flex: 1; background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
-        
-        .gauge-container { display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; padding-bottom: 30px; margin-top: 15px; }
-        .gauge-arc { width: 100px; height: 50px; border-radius: 100px 100px 0 0; background: conic-gradient(from 270deg, var(--red) 0% 50%, var(--green) 50% 100%); position: relative; }
+        .ai-viz-row { display: flex; gap: 6px; margin-bottom: 6px; }
+        .viz-box { flex: 1; background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 6px; display: flex; flex-direction: column; align-items: center; position: relative; }
+        .gauge-arc { width: 100px; height: 50px; border-radius: 100px 100px 0 0; background: conic-gradient(from 270deg, var(--red) 0% 50%, var(--green) 50% 100%); position: relative; margin-top: 10px; }
         .gauge-arc::after { content: ''; position: absolute; bottom: 0; left: 15px; width: 70px; height: 35px; background: #020617; border-radius: 70px 70px 0 0; }
-        .gauge-needle { position: absolute; bottom: 30px; left: 50%; width: 3px; height: 45px; background: white; transform-origin: bottom center; transform: rotate(-90deg); transition: transform 1s ease-out; border-radius: 2px; }
-        .gauge-text { position: absolute; bottom: 30px; font-size: 16px; font-weight: bold; color: white; z-index: 10; text-shadow: 0 0 4px #000; }
-        .gauge-label { position: absolute; bottom: 5px; font-size: 9px; color: var(--text-muted); width: 100%; text-align: center; }
-
-        .donut-wrap { display: flex; align-items: center; gap: 10px; width: 100%; justify-content: center; margin-top: 15px;}
-        .donut-chart { width: 60px; height: 60px; border-radius: 50%; background: conic-gradient(var(--red) 0% 33%, var(--green) 33% 66%, var(--orange) 66% 100%); position: relative; display: flex; justify-content: center; align-items: center; }
-        .donut-inner { width: 38px; height: 38px; border-radius: 50%; background: #020617; position: absolute; display: flex; justify-content: center; align-items: center; font-size: 9px; font-weight: bold; color: var(--text-muted); }
-        .donut-legend { display: flex; flex-direction: column; gap: 4px; font-size: 10px; }
-        .d-leg-item { display: flex; align-items: center; gap: 4px; }
-        .d-dot { width: 8px; height: 8px; border-radius: 2px; }
-
-        /* === 全新：機構級護城河與敘事面板 === */
-        .moat-box { background: #020617; border: 1px solid var(--purple); border-radius: 4px; padding: 10px; margin-bottom: 8px; }
-        .moat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-        .moat-title { font-size: 12px; font-weight: bold; color: var(--purple); }
-        .moat-score { font-size: 16px; font-weight: bold; color: white; background: var(--purple); padding: 2px 8px; border-radius: 4px; }
-        .narrative-box { background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; margin-bottom: 8px; border-left: 3px solid var(--cyan); }
-        .narrative-title { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; font-weight:bold; }
-        .narrative-text { font-size: 12px; color: white; line-height: 1.4; }
+        .gauge-needle { position: absolute; bottom: 0; left: 50%; width: 2px; height: 45px; background: white; transform-origin: bottom center; transform: rotate(-90deg); transition: 1s ease-out; }
+        .gauge-text { position: absolute; bottom: 2px; font-size: 14px; font-weight: bold; }
         
-        .risk-ul { margin: 0; padding-left: 20px; font-size: 11px; color: var(--orange); }
-        .risk-ul li { margin-bottom: 4px; }
+        .donut-chart { width: 60px; height: 60px; border-radius: 50%; background: conic-gradient(var(--red) 0%, var(--orange) 0%, var(--green) 0%); position: relative; display: flex; justify-content: center; align-items: center; margin-top: 8px;}
+        .donut-inner { width: 38px; height: 38px; border-radius: 50%; background: #020617; position: absolute; font-size: 9px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
 
-        .pattern-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
-        .pattern-item { background: #020617; border-left: 2px solid var(--cyan); padding: 4px 8px; border-radius: 0 4px 4px 0; }
-        .pattern-lbl { font-size: 10px; color: var(--text-muted); }
-        .pattern-val { font-size: 12px; font-weight: bold; color: white; margin-top:2px; }
-        .industry-box { background: #020617; border: 1px dashed var(--blue); padding: 6px; border-radius: 4px; }
-        .industry-link { color: var(--cyan); font-size: 11px; margin-top: 4px; font-weight: bold; }
-
-        .f-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-        .f-item { background: #020617; padding: 6px; border-radius: 4px; text-align: center; border: 1px solid #1e293b; }
-        .f-label { font-size: 10px; color: var(--text-muted); margin-bottom: 2px; }
-        .f-val { font-size: 14px; font-weight: bold; color: white; }
-
-        .txt-red { color: var(--red); } .txt-green { color: var(--green); }
-        #sysMessage { font-size: 12px; color: var(--cyan); position: absolute; top: 15px; left: 50%; transform: translateX(-50%); font-weight: bold;}
+        .tech-table, .chip-table { width: 100%; border-collapse: collapse; font-size: 10.5px; text-align: center; }
+        .tech-table td, .chip-table td { padding: 4px 2px; border-bottom: 1px solid #0f172a; }
+        .status-up { color: var(--red); font-weight: bold; } .status-down { color: var(--green); font-weight: bold; }
         
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: none; justify-content: center; align-items: center; }
-        .modal-content { background: var(--panel-bg); border: 1px solid var(--blue); border-radius: 8px; width: 450px; padding: 15px; max-height: 80vh; display:flex; flex-direction:column; }
-        .modal-header { font-size: 16px; font-weight: bold; color: white; margin-bottom: 10px; display: flex; justify-content: space-between; }
-        .sector-list { overflow-y: auto; flex:1; }
-        .sector-group { margin-bottom: 15px; background: #020617; border: 1px solid #1e293b; border-radius: 6px; padding: 10px; }
-        .sector-title { font-size: 14px; font-weight: bold; color: var(--cyan); margin-bottom: 8px; border-bottom: 1px dashed #1e293b; padding-bottom: 4px;}
-        .sector-item { display: flex; justify-content: space-between; padding: 6px; border-bottom: 1px solid #0f172a; cursor: pointer; transition: 0.2s;}
-        .sector-item:hover { background: #0f172a; }
-        .sector-item:last-child { border-bottom: none; }
-        .radar-list { list-style: none; padding: 0; margin: 0; max-height: 250px; overflow-y: auto; }
-        .radar-item { background: #0b0e14; margin-bottom: 6px; padding: 10px; border-radius: 4px; display: flex; justify-content: space-between; border: 1px solid var(--border-color); cursor: pointer; }
-        .radar-item:hover { border-color: var(--cyan); }
+        .modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:100; display:none; justify-content:center; align-items:center; }
+        .modal-content { background:var(--panel-bg); border:1px solid var(--blue); border-radius:8px; width:450px; padding:15px; max-height:80vh; overflow-y:auto;}
+        #sysMessage { font-size: 12px; color: var(--cyan); position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-weight: bold;}
     </style>
 </head>
 <body>
-    <div class="modal-overlay" id="radarModal">
-        <div class="modal-content" style="width: 350px;"><div class="modal-header"><span>📡 選股雷達掃描</span><button style="background:none;border:none;color:gray;cursor:pointer;" onclick="closeModal('radarModal')">×</button></div><ul class="radar-list" id="radarList"><div style="text-align:center;color:gray;padding:10px;">掃描中...</div></ul></div>
-    </div>
-    <div class="modal-overlay" id="sectorModal">
-        <div class="modal-content" style="width: 500px;"><div class="modal-header"><span>🗂️ 產業板塊熱力圖</span><button style="background:none;border:none;color:gray;cursor:pointer;" onclick="closeModal('sectorModal')">×</button></div><div class="sector-list" id="sectorList"><div style="text-align:center;color:var(--cyan);padding:20px;">載入中...</div></div></div>
-    </div>
+    <div class="modal-overlay" id="radarModal"><div class="modal-content"><div style="display:flex;justify-content:space-between;"><span>📡 雷達掃描</span><button onclick="closeModal('radarModal')">×</button></div><ul id="radarList"></ul></div></div>
+    <div class="modal-overlay" id="sectorModal"><div class="modal-content"><div style="display:flex;justify-content:space-between;"><span>🗂️ 板塊熱力圖</span><button onclick="closeModal('sectorModal')">×</button></div><div id="sectorList"></div></div></div>
 
     <div class="top-bar">
         <div class="search-group">
             <button class="btn-radar" onclick="startRadar()">📡 雷達</button>
             <button class="btn-sector" onclick="startSectors()">🗂️ 板塊</button>
-            <div style="width: 1px; height: 20px; background: var(--border-color); margin: 0 5px;"></div>
-            <input type="text" id="symbol" value="3661" placeholder="代碼" style="width: 80px;">
-            <select id="intervalSelector"><option value="1d" selected>日K</option><option value="60m">60分</option></select>
-            <button class="btn-primary" id="analyzeBtn" onclick="analyze()">⚡ 啟動機構終端</button>
+            <input type="text" id="symbol" value="6805" placeholder="代碼" style="width: 70px;">
+            <select id="intervalSelector"><option value="1d">日K</option><option value="60m">60分</option></select>
+            <button class="btn-primary" id="analyzeBtn" onclick="analyze()">⚡ 啟動終端</button>
         </div>
         <div id="sysMessage"></div>
         <div class="price-zone" id="priceZone">
-            <div style="display:flex; align-items: baseline; gap:8px;"><span id="stockTitle" style="font-weight:bold; font-size:20px; letter-spacing:1px; color:white;">--</span><span id="ai-signal" style="font-size:14px; font-weight:bold; padding:2px 6px; border-radius:4px; background:rgba(255,255,255,0.1);">--</span></div>
-            <div class="current-price" id="currentPriceDisplay">0.00</div>
+            <span id="stockTitle" style="font-weight:bold; font-size:18px; color:white;">--</span>
+            <span id="ai-signal-badge" style="font-size:11px; padding:2px 6px; border-radius:4px; background:rgba(255,255,255,0.1);">--</span>
+            
+            <!-- 全新：漲跌幅戰鬥儀表板 -->
+            <div style="display:flex; align-items:baseline; gap:8px;">
+                <div class="current-price" id="currentPriceDisplay">0.00</div>
+                <div class="price-change" id="priceChangeDisplay">--</div>
+            </div>
         </div>
     </div>
     
     <div class="main-grid" id="mainGrid">
         <div class="column">
             <div class="chart-wrapper">
-                <div class="chart-box">
-                    <div class="chart-title"><span id="mainChartTitle">技術面分析</span><span class="legend-ma5" id="l-ma5">M5:--</span><span class="legend-ma20" id="l-ma20">M20:--</span><span class="legend-ma60" id="l-ma60">M60:--</span><span class="legend-bb" id="l-bb">上軌:--</span></div>
-                    <div class="chart-legend" id="chartLegend"></div><div id="mainChart"></div>
-                </div>
-                <div class="chart-box"><div class="chart-title">MACD</div><div id="macdChart" class="sub-chart"></div></div>
-                <div class="chart-box"><div class="chart-title">KD (9,3,3)</div><div id="kdChart" class="sub-chart"></div></div>
-                <div class="chart-box" id="chipBox" style="border:none;">
-                    <div class="chart-title">三大法人 <span class="legend-for" id="l-for">外:--</span><span class="legend-tru" id="l-tru">投:--</span></div>
-                    <div id="chipChart" class="sub-chart"></div>
-                </div>
+                <div class="chart-box"><div class="chart-title">技術面分析</div><div id="mainChart"></div></div>
+                <div class="chart-box"><div id="macdChart" class="sub-chart"></div></div>
+                <div class="chart-box"><div id="kdChart" class="sub-chart"></div></div>
             </div>
         </div>
         
         <div class="column">
+            <!-- 全新：動態量價警示中心 -->
             <div class="info-card" style="padding: 6px; border-color:var(--orange);">
-                <div class="card-header" style="margin-bottom: 4px; color:var(--orange);">🚨 量價警示中心</div>
+                <div class="card-header" style="margin-bottom: 4px; color:var(--orange);">🚨 盤中量價警示中心</div>
                 <div class="alert-box" id="alertBox">
-                    <div class="alert-title" id="alertTitle">安全</div><div class="alert-msg" id="alertMsg">目前無明顯出貨跡象</div>
-                </div>
-                <div class="vol-grid">
-                    <div class="vol-item"><div class="vol-lbl">今日成交量</div><div class="vol-val" id="vol-today">0</div></div>
-                    <div class="vol-item"><div class="vol-lbl">5日均量</div><div class="vol-val" id="vol-ma5">0</div></div>
-                </div>
-                <div style="background:#020617; border: 1px solid #1e293b; border-radius:4px; padding: 6px; text-align:center;">
-                    <div style="font-size:10px; color:var(--text-muted); margin-bottom: 2px;">量價結構判定</div>
-                    <div id="vol-status" style="font-size:14px; font-weight:bold; color:white;">--</div>
-                    <div id="vol-desc" style="font-size:10px; color:var(--text-muted); margin-top:2px;">--</div>
+                    <div class="alert-title" id="alertTitle">安全</div><div class="alert-msg" id="alertMsg">目前無明顯異常跡象</div>
                 </div>
             </div>
 
-            <div class="info-card" style="padding: 6px;">
-                <div class="card-header" style="margin-bottom: 4px;">📊 劇本推演</div>
-                <div class="scenario-grid">
-                    <div class="scenario-box s-up"><div class="lbl">① 突破</div><div class="act"><span id="s-up-p" style="font-weight:bold;">--</span><br><span id="s-up-a" style="font-size:10px;">--</span></div></div>
-                    <div class="scenario-box s-flat"><div class="lbl">② 震盪</div><div class="act"><span id="s-flat-p" style="font-weight:bold;">--</span><br><span id="s-flat-a" style="font-size:10px;">--</span></div></div>
-                    <div class="scenario-box s-down"><div class="lbl">③ 跌破</div><div class="act"><span id="s-down-p" style="font-weight:bold;">--</span><br><span id="s-down-a" style="font-size:10px;">--</span></div></div>
-                </div>
+            <div class="info-card">
+                <div class="card-header">📋 技術指標狀態</div>
+                <table class="tech-table"><tbody id="techTableBody"></tbody></table>
             </div>
-
-            <div class="info-card" id="chipTableCard" style="padding: 6px; flex:1;">
-                <div class="card-header" style="margin-bottom: 4px;">🏦 法人近 10 日(張)</div>
-                <table class="chip-table"><thead><tr><th>日期</th><th>外</th><th>投</th><th>自</th><th>計</th></tr></thead><tbody id="chipTableBody"></tbody></table>
-                <div style="background:#020617; border: 1px dashed var(--cyan); border-radius:4px; padding: 6px; margin-top: 6px; text-align:center;">
-                    <div style="font-size:10px; color:var(--text-muted); margin-bottom: 2px;">籌碼結構解讀</div>
-                    <div id="ai-chip-status" style="font-size:12px; font-weight:bold; color:white;">--</div>
-                </div>
+            <div class="info-card" style="flex:1; display:flex; flex-direction:column;">
+                <div class="card-header">🏦 法人近 10 日動向</div>
+                <table class="chip-table" style="flex:1;"><thead><tr><th>日期</th><th>外</th><th>投</th><th>自</th><th>計</th></tr></thead><tbody id="chipTableBody"></tbody></table>
             </div>
         </div>
 
         <div class="column">
-            <div class="ai-quant-row">
-                <div class="ai-quant-box" style="border-color: var(--red);">
-                    <div style="font-size:11px; color:var(--red); font-weight:bold; margin-bottom:6px; position:absolute; top:4px; left:6px;">勝率評估</div>
-                    <div class="gauge-container"><div class="gauge-arc" id="gaugeArc"></div><div class="gauge-needle" id="gaugeNeedle"></div><div class="gauge-text" id="gaugeText">0%</div><div class="gauge-label" id="gaugeLabel">等待計算</div></div>
+            <div class="ai-viz-row">
+                <div class="viz-box">
+                    <div style="font-size:10px; color:var(--red); font-weight:bold;">量化勝率</div>
+                    <div class="gauge-container"><div class="gauge-arc"></div><div class="gauge-needle" id="gaugeNeedle"></div><div class="gauge-text" id="gaugeText">0%</div><div class="gauge-label" id="gaugeLabel" style="font-size:8px; margin-top:28px;">--</div></div>
                 </div>
-                <div class="ai-quant-box" style="border-color: var(--cyan);">
-                    <div style="font-size:11px; color:var(--cyan); font-weight:bold; margin-bottom:6px; position:absolute; top:4px; left:6px;">明日AI機率</div>
-                    <div class="donut-wrap"><div class="donut-chart" id="donutChart"><div class="donut-inner">AI</div></div><div class="donut-legend"><div class="d-leg-item"><div class="d-dot" style="background:var(--red);"></div>漲 <span id="p-up" style="color:white;">--%</span></div><div class="d-leg-item"><div class="d-dot" style="background:var(--orange);"></div>盤 <span id="p-flat" style="color:white;">--%</span></div><div class="d-leg-item"><div class="d-dot" style="background:var(--green);"></div>跌 <span id="p-down" style="color:white;">--%</span></div></div></div>
-                </div>
-            </div>
-
-            <!-- === 全新：機構級護城河與敘事面板 === -->
-            <div class="info-card" style="padding: 8px; border-color: var(--purple); flex: 1;">
-                <div class="card-header" style="color: var(--purple); border-color: var(--purple);">🏰 機構級商業護城河透視</div>
-                
-                <div class="moat-box">
-                    <div class="moat-header">
-                        <span class="moat-title">競爭護城河評分</span>
-                        <span class="moat-score" id="moat-score">--/10</span>
-                    </div>
-                    <div style="font-size:11px; color:var(--text-main); line-height:1.4;" id="moat-desc">--</div>
-                </div>
-
-                <div class="narrative-box">
-                    <div class="narrative-title">當前市場敘事 (已定價)</div>
-                    <div class="narrative-text" id="market-narrative">--</div>
-                </div>
-                <div class="narrative-box" style="border-left-color: var(--orange);">
-                    <div class="narrative-title">市場潛在盲點 / 未驗證假設</div>
-                    <div class="narrative-text" id="narrative-risk">--</div>
-                </div>
-
-                <div class="industry-box">
-                    <div style="font-size:10px; color:var(--text-muted); display:flex; justify-content:space-between;"><span>產業鏈: <b id="ai-industry" style="color:white;">--</b></span><span>牛熊預測: <b id="bull-bear" style="color:var(--cyan);">--</b></span></div>
-                    <div class="industry-link" id="ai-related">--</div>
-                </div>
-                
-                <div style="margin-top: 8px;">
-                    <div style="font-size:11px; font-weight:bold; color:var(--orange); margin-bottom:4px;">⚠️ 未來 12-24 個月最大風險</div>
-                    <ul class="risk-ul" id="risk-factors">
-                        <li>等待載入中...</li>
-                    </ul>
+                <div class="viz-box">
+                    <div style="font-size:10px; color:var(--cyan); font-weight:bold;">明日預測</div>
+                    <div class="donut-chart" id="donutChart"><div class="donut-inner">AI</div></div>
+                    <div style="font-size:9px; margin-top:6px;"><span id="p-up" style="color:var(--red);">漲--%</span> | <span id="p-flat" style="color:var(--orange);">盤--%</span> | <span id="p-down" style="color:var(--green);">跌--%</span></div>
                 </div>
             </div>
-            
-            <div class="info-card" style="padding: 8px;">
-                <div class="f-grid">
-                    <div class="f-item"><div class="f-label">壓力區 (停利)</div><div class="f-val" id="ai-pressure" style="color:var(--green)">--</div></div>
-                    <div class="f-item"><div class="f-label">支撐區 (防守)</div><div class="f-val" id="ai-support" style="color:var(--red)">--</div></div>
+
+            <div class="info-card" style="border-color: var(--cyan); flex: 1;">
+                <div class="card-header" style="color: var(--cyan);">🔱 我的建議 (AI) - 戰術指揮中樞</div>
+                <div class="hub-grid">
+                    <div class="hub-item hub-wide"><span class="hub-lbl">1. 操作建議 (短線)</span><span class="hub-val" id="h-op-short" style="color:var(--cyan);">--</span></div>
+                    <div class="hub-item"><span class="hub-lbl">2. 量價背離判斷</span><span class="hub-val" id="h-vol-price-div">--</span></div>
+                    <div class="hub-item"><span class="hub-lbl">3. 進場勝率</span><span class="hub-val" id="h-entry-winrate">--</span></div>
+                    <div class="hub-item hub-wide"><span class="hub-lbl">4. 中長線看法</span><span class="hub-val" id="h-mid-long-view">--</span></div>
+                    <div class="hub-item"><span class="hub-lbl">5. 成交量分析</span><span class="hub-val" id="h-vol-analysis">--</span></div>
+                    <div class="hub-item"><span class="hub-lbl">6. 主力出貨警示</span><span class="hub-val" id="h-exit-warning" style="font-size:13px;">--</span></div>
+                    <div class="hub-item hub-wide"><span class="hub-lbl">7. 關鍵價位 (支撐/壓力)</span><span class="hub-val" id="h-key-levels" style="color:var(--orange);">--</span></div>
+                    <div class="hub-item hub-wide" style="border-color: var(--red); background: rgba(239,68,68,0.05);"><span class="hub-lbl" style="color:var(--red);">8. 風險提醒</span><span class="hub-val" id="h-risk-reminder" style="color:var(--red);">--</span></div>
                 </div>
+                <div style="margin-top:8px; font-size:10px; color:var(--text-muted); border-top:1px solid #1e293b; padding-top:4px;">產業鏈: <span id="h-industry" style="color:white;">--</span></div>
             </div>
         </div>
     </div>
@@ -265,129 +163,117 @@
         
         async function startRadar() {
             document.getElementById('radarModal').style.display = 'flex';
-            const listEl = document.getElementById('radarList');
-            listEl.innerHTML = '<div style="text-align:center;color:var(--cyan);padding:10px;">🔄 雷達掃描中...</div>';
             try {
                 const res = await fetch('https://my-ai-stock-tool.onrender.com/radar');
                 const data = await res.json();
-                if (data.status === "success" && data.matches.length > 0) {
-                    listEl.innerHTML = data.matches.map(s => `<li style="background:#0b0e14;margin-bottom:6px;padding:10px;display:flex;justify-content:space-between;cursor:pointer;border-radius:4px;border:1px solid #1e3a8a;" onclick="loadFromModal('${s.symbol}')"><div><span style="color:white; font-weight:bold;">${s.name}</span> <span style="color:gray; font-size:11px;">(${s.symbol})</span></div><div style="color:var(--red); font-weight:bold;">${s.price.toFixed(2)}</div></li>`).join('');
-                } else { listEl.innerHTML = '<div style="text-align:center;color:gray;">無標的符合條件。</div>'; }
-            } catch (e) { listEl.innerHTML = '<div style="color:var(--red);text-align:center;">連線異常。</div>'; }
+                if (data.status === "success") {
+                    document.getElementById('radarList').innerHTML = data.matches.map(s => `<li style="padding:8px; cursor:pointer; border-bottom:1px solid #1e293b;" onclick="loadStock('${s.symbol}')">${s.name} (${s.symbol}) - <b style="color:var(--red);">${s.price}</b></li>`).join('');
+                }
+            } catch(e) {}
         }
 
         async function startSectors() {
             document.getElementById('sectorModal').style.display = 'flex';
-            const listEl = document.getElementById('sectorList');
-            listEl.innerHTML = '<div style="text-align:center;color:var(--cyan);padding:20px;">🔄 載入板塊資金動向中...</div>';
             try {
                 const res = await fetch('https://my-ai-stock-tool.onrender.com/sectors');
                 const data = await res.json();
                 if (data.status === "success") {
-                    let html = '';
-                    for (const [sector, stocks] of Object.entries(data.data)) {
-                        html += `<div class="sector-group"><div class="sector-title">${sector}</div>`;
-                        stocks.forEach(s => {
-                            let color = s.change > 0 ? 'var(--red)' : (s.change < 0 ? 'var(--green)' : 'white');
-                            let sign = s.change > 0 ? '+' : '';
-                            html += `<div class="sector-item" onclick="loadFromModal('${s.symbol}')">
-                                <div><span style="color:white; font-weight:bold;">${s.name}</span> <span style="color:gray; font-size:11px;">(${s.symbol})</span></div>
-                                <div><span style="font-weight:bold; color:${color};">${s.price.toFixed(2)}</span> <span style="font-size:11px; color:${color};">(${sign}${s.change}%)</span></div>
-                            </div>`;
+                    let h = '';
+                    for (const [sec, sts] of Object.entries(data.data)) {
+                        h += `<div style="margin-bottom:10px;"><div style="color:var(--cyan);font-weight:bold;font-size:12px;margin-bottom:4px;">${sec}</div>`;
+                        sts.forEach(s => {
+                            h += `<div style="display:flex;justify-content:space-between;font-size:11px;padding:4px;cursor:pointer;" onclick="loadStock('${s.symbol}')"><span>${s.name}</span><span style="color:${s.change>0?'var(--red)':'var(--green)'}">${s.price} (${s.change}%)</span></div>`;
                         });
-                        html += `</div>`;
+                        h += `</div>`;
                     }
-                    listEl.innerHTML = html;
-                } else { listEl.innerHTML = '<div style="text-align:center;color:gray;">載入失敗。</div>'; }
-            } catch (e) { listEl.innerHTML = '<div style="color:var(--red);text-align:center;">連線異常。</div>'; }
+                    document.getElementById('sectorList').innerHTML = h;
+                }
+            } catch(e) {}
         }
-
-        function loadFromModal(symbol) { closeModal('radarModal'); closeModal('sectorModal'); document.getElementById('symbol').value = symbol; analyze(); }
+        function loadStock(s) { closeModal('radarModal'); closeModal('sectorModal'); document.getElementById('symbol').value = s; analyze(); }
 
         async function analyze() {
-            const symbolInput = document.getElementById('symbol').value.trim();
-            const symbol = /^\d+$/.test(symbolInput) ? symbolInput + ".TW" : symbolInput;
-            document.getElementById('symbol').value = symbol;
+            const sym = document.getElementById('symbol').value.trim();
+            const symbol = /^\d+$/.test(sym) ? sym + ".TW" : sym;
             const interval = document.getElementById('intervalSelector').value;
             const btn = document.getElementById('analyzeBtn');
-            const sysMsg = document.getElementById('sysMessage');
+            const msg = document.getElementById('sysMessage');
             
             document.getElementById('mainGrid').style.display = "none"; document.getElementById('priceZone').style.display = "none";
-            btn.disabled = true; btn.innerText = "掃描中...";
-            sysMsg.innerText = '🔄 避險基金級深層透視分析中...';
+            btn.disabled = true; msg.innerText = '🔄 核心系統調度中...';
             
             try {
                 const res = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${symbol}&interval=${interval}`);
-                if (!res.ok) throw new Error("機房休眠喚醒中，請倒數 10 秒後再按一次！");
                 const data = await res.json();
-                
                 if(data.status === "success") {
-                    sysMsg.innerText = "";
-                    currentAnalysis.symbol = data.symbol; currentAnalysis.price = parseFloat(data.current_price);
+                    msg.innerText = "";
+                    currentAnalysis.symbol = data.symbol; currentAnalysis.price = data.current_price;
                     document.getElementById('mainGrid').style.display = "grid"; document.getElementById('priceZone').style.display = "flex";
                     document.getElementById('stockTitle').innerText = data.fundamental.name || data.symbol.split('.')[0];
-                    document.getElementById('currentPriceDisplay').innerText = currentAnalysis.price.toFixed(2);
                     
-                    const isDaily = (data.interval === '1d');
-                    document.getElementById('chipBox').style.display = isDaily ? "block" : "none";
-                    document.getElementById('chipTableCard').style.display = isDaily ? "block" : "none";
-                    if (isDaily && data.chip_table) {
-                        document.getElementById('chipTableBody').innerHTML = data.chip_table.map(r => {
-                            const fC = r.foreign>0?'txt-red':(r.foreign<0?'txt-green':''); const tC = r.trust>0?'txt-red':(r.trust<0?'txt-green':'');
-                            return `<tr><td>${r.date}</td><td class="${fC}">${r.foreign}</td><td class="${tC}">${r.trust}</td><td>${r.dealer}</td><td style="font-weight:bold;">${r.total}</td></tr>`;
-                        }).join('');
+                    // === 更新實戰報價與顏色 (紅漲綠跌) ===
+                    let cpDisplay = document.getElementById('currentPriceDisplay');
+                    let chgDisplay = document.getElementById('priceChangeDisplay');
+                    let chgAmt = data.volume_data.price_change;
+                    let chgPct = data.volume_data.price_change_pct;
+                    
+                    cpDisplay.innerText = data.current_price.toFixed(2);
+                    if(chgAmt > 0) {
+                        chgDisplay.innerText = `▲ ${chgAmt.toFixed(2)} (${chgPct.toFixed(2)}%)`;
+                        chgDisplay.style.color = "var(--red)"; cpDisplay.style.color = "var(--red)";
+                    } else if(chgAmt < 0) {
+                        chgDisplay.innerText = `▼ ${Math.abs(chgAmt).toFixed(2)} (${chgPct.toFixed(2)}%)`;
+                        chgDisplay.style.color = "var(--green)"; cpDisplay.style.color = "var(--green)";
+                    } else {
+                        chgDisplay.innerText = `0.00 (0.00%)`;
+                        chgDisplay.style.color = "white"; cpDisplay.style.color = "white";
                     }
 
-                    // 量價警示面板
-                    const vData = data.volume_data;
-                    document.getElementById('vol-today').innerText = vData.today_vol.toLocaleString();
-                    document.getElementById('vol-ma5').innerText = vData.vol_ma5.toLocaleString();
-                    let vStatus = document.getElementById('vol-status');
-                    vStatus.innerText = vData.status; vStatus.style.color = vData.color;
-                    document.getElementById('vol-desc').innerText = vData.desc;
+                    if (data.chip_table) {
+                        document.getElementById('chipTableBody').innerHTML = data.chip_table.map(r => `<tr><td>${r.date}</td><td class="${r.foreign>0?'status-up':'status-down'}">${r.foreign}</td><td class="${r.trust>0?'status-up':'status-down'}">${r.trust}</td><td>${r.dealer}</td><td style="font-weight:bold;">${r.total}</td></tr>`).join('');
+                    }
 
+                    // === 更新警示面板 ===
                     const wBox = data.warning_box;
                     let aBox = document.getElementById('alertBox');
                     document.getElementById('alertTitle').innerText = wBox.title;
                     document.getElementById('alertMsg').innerText = wBox.msg;
-                    if(wBox.active) { aBox.classList.add('alert-danger'); } else { aBox.classList.remove('alert-danger'); }
+                    aBox.className = 'alert-box'; // reset
+                    if(wBox.level === 'danger') aBox.classList.add('alert-danger');
+                    else if(wBox.level === 'warning') aBox.classList.add('alert-warning');
 
                     const ai = data.ai_analysis;
-                    let sigEl = document.getElementById('ai-signal');
-                    sigEl.innerText = ai.signal || '--';
-                    if(ai.signal) sigEl.style.color = (ai.signal.includes('多')||ai.signal.includes('強')) ? 'var(--red)' : ((ai.signal.includes('空')||ai.signal.includes('弱')) ? 'var(--green)' : 'var(--orange)');
-                    
-                    document.getElementById('ai-pressure').innerText = ai.pressure || '--'; document.getElementById('ai-support').innerText = ai.support || '--';
-                    document.getElementById('s-up-p').innerText = (ai.scenario_up && ai.scenario_up.price) ? ai.scenario_up.price : '--'; document.getElementById('s-up-a').innerText = (ai.scenario_up && ai.scenario_up.action) ? ai.scenario_up.action : '--';
-                    document.getElementById('s-flat-p').innerText = (ai.scenario_flat && ai.scenario_flat.price) ? ai.scenario_flat.price : '--'; document.getElementById('s-flat-a').innerText = (ai.scenario_flat && ai.scenario_flat.action) ? ai.scenario_flat.action : '--';
-                    document.getElementById('s-down-p').innerText = (ai.scenario_down && ai.scenario_down.price) ? ai.scenario_down.price : '--'; document.getElementById('s-down-a').innerText = (ai.scenario_down && ai.scenario_down.action) ? ai.scenario_down.action : '--';
-                    
-                    // 機構級資訊綁定
-                    document.getElementById('ai-industry').innerText = ai.industry_desc || '--';
-                    document.getElementById('ai-related').innerText = ai.related_stocks || '--';
-                    document.getElementById('ai-chip-status').innerText = ai.chip_status || '動向不明';
-                    
-                    document.getElementById('moat-score').innerText = `${ai.moat_score || '--'}/10`;
-                    document.getElementById('moat-desc').innerText = ai.moat_desc || '--';
-                    document.getElementById('market-narrative').innerText = ai.market_narrative || '--';
-                    document.getElementById('narrative-risk').innerText = ai.narrative_risk || '--';
-                    document.getElementById('bull-bear').innerText = ai.bull_bear || '--';
-                    
-                    const rfUl = document.getElementById('risk-factors');
-                    if (ai.risk_factors && Array.isArray(ai.risk_factors)) {
-                        rfUl.innerHTML = ai.risk_factors.map(r => `<li>${r}</li>`).join('');
-                    } else { rfUl.innerHTML = '<li>無明顯風險資訊</li>'; }
+                    document.getElementById('h-op-short').innerText = ai.op_short;
+                    document.getElementById('h-vol-price-div').innerText = ai.vol_price_div;
+                    document.getElementById('h-entry-winrate').innerText = ai.entry_winrate;
+                    document.getElementById('h-mid-long-view').innerText = ai.mid_long_view;
+                    document.getElementById('h-vol-analysis').innerText = ai.vol_analysis;
+                    document.getElementById('h-exit-warning').innerText = ai.exit_warning;
+                    document.getElementById('h-key-levels').innerText = ai.key_levels;
+                    document.getElementById('h-risk-reminder').innerText = ai.risk_reminder;
+                    document.getElementById('h-industry').innerText = ai.industry_desc;
 
-                    let pup = ai.prob_up || 33; let pdown = ai.prob_down || 33; let pflat = ai.prob_flat || 34;
-                    document.getElementById('p-up').innerText = pup + "%"; document.getElementById('p-down').innerText = pdown + "%"; document.getElementById('p-flat').innerText = pflat + "%";
-                    let upDeg = pup * 3.6; let flatDeg = upDeg + (pflat * 3.6);
-                    document.getElementById('donutChart').style.background = `conic-gradient(var(--red) 0deg ${upDeg}deg, var(--orange) ${upDeg}deg ${flatDeg}deg, var(--green) ${flatDeg}deg 360deg)`;
+                    let bdg = document.getElementById('ai-signal-badge');
+                    bdg.innerText = ai.signal; bdg.style.color = ai.signal.includes('多') ? 'var(--red)' : (ai.signal.includes('跌') ? 'var(--green)' : 'var(--orange)');
 
+                    let pup = ai.prob_up, pdown = ai.prob_down, pflat = ai.prob_flat;
+                    document.getElementById('p-up').innerText = `漲${pup}%`; document.getElementById('p-down').innerText = `跌${pdown}%`; document.getElementById('p-flat').innerText = `盤${pflat}%`;
+                    document.getElementById('donutChart').style.background = `conic-gradient(var(--red) 0% ${pup}%, var(--orange) ${pup}% ${pup+pflat}%, var(--green) ${pup+pflat}% 100%)`;
+
+                    generateTechTable(data.chart_data, data.kd_data, data.macd_data);
                     runBacktest(data.chart_data, data.kd_data, data.macd_data);
-                    renderCharts(data); 
-                } else { sysMsg.innerHTML = `<span style="color:var(--red);">❌ 分析出錯：${data.message}</span>`; }
-            } catch(e) { sysMsg.innerHTML = `<span style="color:var(--red);">⚠️ ${e.message}</span>`; }
-            finally { btn.disabled = false; btn.innerText = "⚡ 啟動機構終端"; }
+                    renderCharts(data);
+                }
+            } catch(e) { msg.innerText = "連線超時，請重按一次！"; }
+            finally { btn.disabled = false; }
+        }
+
+        function generateTechTable(kline, kd, macd) {
+            let lastK = kline[kline.length-1], lastKD = kd[kd.length-1], lastM = macd[macd.length-1];
+            let h = `<tr><td>KD</td><td class="${lastKD.k>lastKD.d?'status-up':'status-down'}">${lastKD.k>lastKD.d?'多頭':'空頭'}</td><td>K:${lastKD.k.toFixed(1)}</td></tr>`;
+            h += `<tr><td>MACD</td><td class="${lastM.osc>0?'status-up':'status-down'}">${lastM.osc>0?'多頭':'空頭'}</td><td>${lastM.osc>0?'紅柱':'綠柱'}</td></tr>`;
+            h += `<tr><td>均線</td><td class="${lastK.close>lastK.ma20?'status-up':'status-down'}">${lastK.close>lastK.ma20?'偏強':'偏弱'}</td><td>月線上</td></tr>`;
+            document.getElementById('techTableBody').innerHTML = h;
         }
 
         function runBacktest(klineData, kdData, macdData) {
@@ -413,81 +299,19 @@
         }
 
         function renderCharts(data) {
-            for (let key in charts) { if (charts[key]) { try { charts[key].remove(); } catch (e) {} } }
-            charts = {}; seriesDict = {};
-            const iv = data.interval;
-            const opt = { layout: { background: '#0a1128', textColor: '#94a3b8' }, grid: { vertLines: { color: '#1e3a8a' }, horzLines: { color: '#1e3a8a' } }, crosshair: { mode: LightweightCharts.CrosshairMode.Normal }, timeScale: { visible: false, timeVisible: iv !== '1d' } };
-
-            charts.main = LightweightCharts.createChart(document.getElementById('mainChart'), { ...opt, height: 350 });
-            seriesDict.bbUpper = charts.main.addLineSeries({ color: 'rgba(255,255,255,0.3)', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false });
-            seriesDict.bbLower = charts.main.addLineSeries({ color: 'rgba(255,255,255,0.3)', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false });
-            if (data.chart_data[0].bb_upper) { seriesDict.bbUpper.setData(data.chart_data.map(d => ({ time: d.time, value: d.bb_upper }))); seriesDict.bbLower.setData(data.chart_data.map(d => ({ time: d.time, value: d.bb_lower }))); }
-            seriesDict.candle = charts.main.addCandlestickSeries({ upColor: '#ef4444', downColor: '#10b981', borderVisible: false, wickUpColor: '#ef4444', wickDownColor: '#10b981' }); seriesDict.candle.setData(data.chart_data);
-            seriesDict.ma5 = charts.main.addLineSeries({ color: '#fde047', lineWidth: 1.5, crosshairMarkerVisible: false }); seriesDict.ma5.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma5 })));
-            seriesDict.ma20 = charts.main.addLineSeries({ color: '#f43f5e', lineWidth: 1.5, crosshairMarkerVisible: false }); seriesDict.ma20.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma20 })));
-            seriesDict.ma60 = charts.main.addLineSeries({ color: '#06b6d4', lineWidth: 1.5, crosshairMarkerVisible: false }); seriesDict.ma60.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma60 })));
-
-            const legend = document.getElementById('chartLegend');
-            const lma5 = document.getElementById('l-ma5'); const lma20 = document.getElementById('l-ma20'); const lma60 = document.getElementById('l-ma60'); const lbb = document.getElementById('l-bb');
-
-            charts.main.subscribeCrosshairMove(param => {
-                if (param.time && param.seriesData.get(seriesDict.candle)) {
-                    const p = param.seriesData.get(seriesDict.candle);
-                    let tStr = param.time; if (typeof param.time === 'number') { tStr = new Date(param.time * 1000).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); }
-                    legend.style.display = 'block';
-                    legend.innerHTML = `${tStr} 開 <span style="color:#fff">${p.open.toFixed(2)}</span> 高 <span style="color:var(--red)">${p.high.toFixed(2)}</span> 低 <span style="color:var(--green)">${p.low.toFixed(2)}</span> 收 <span style="color:var(--cyan)">${p.close.toFixed(2)}</span>`;
-                    const m5 = param.seriesData.get(seriesDict.ma5); lma5.innerText = `M5:${m5 ? m5.value.toFixed(1) : '--'}`;
-                    const m20 = param.seriesData.get(seriesDict.ma20); lma20.innerText = `M20:${m20 ? m20.value.toFixed(1) : '--'}`;
-                    const m60 = param.seriesData.get(seriesDict.ma60); lma60.innerText = `M60:${m60 ? m60.value.toFixed(1) : '--'}`;
-                    const bbu = param.seriesData.get(seriesDict.bbUpper); lbb.innerText = `上軌:${bbu ? bbu.value.toFixed(1) : '--'}`;
-                } else { legend.style.display = 'none'; }
-            });
-
-            if (data.kd_data && data.kd_data.length > 1) {
-                let markers = [];
-                let macdMap = {}; data.macd_data.forEach(d => { macdMap[d.time] = d.osc; });
-                let ma20Map = {}; data.chart_data.forEach(d => { ma20Map[d.time] = d.ma20; });
-                let priceMap = {}; data.chart_data.forEach(d => { priceMap[d.time] = d.close; });
-                for (let i = 1; i < data.kd_data.length; i++) {
-                    const p = data.kd_data[i - 1], c = data.kd_data[i];
-                    let cp = priceMap[c.time]; let ma20 = ma20Map[c.time] || 0; let osc = macdMap[c.time] || 0;
-                    if (p.k <= p.d && c.k > c.d && cp > ma20 && osc > 0) { markers.push({ time: c.time, position: 'belowBar', color: '#ef4444', shape: 'arrowUp', text: '嚴選買' }); }
-                    else if (p.k >= p.d && c.k < c.d) { markers.push({ time: c.time, position: 'aboveBar', color: '#10b981', shape: 'arrowDown', text: '賣' }); }
-                }
-                seriesDict.candle.setMarkers(markers);
-            }
-
+            for (let key in charts) { if (charts[key]) try { charts[key].remove(); } catch(e){} }
+            const opt = { layout: { background: '#0a1128', textColor: '#94a3b8' }, grid: { vertLines: { color: '#1e3a8a' }, horzLines: { color: '#1e3a8a' } }, crosshair: { mode: 0 }, timeScale: { visible: false } };
+            charts.main = LightweightCharts.createChart(document.getElementById('mainChart'), { ...opt, height: 360 });
+            const candle = charts.main.addCandlestickSeries({ upColor: '#ef4444', downColor: '#10b981', borderVisible: false }); candle.setData(data.chart_data);
+            const m20 = charts.main.addLineSeries({ color: '#f43f5e', lineWidth: 1 }); m20.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma20 })));
+            
             charts.macd = LightweightCharts.createChart(document.getElementById('macdChart'), { ...opt, height: 100 });
-            charts.macd.addHistogramSeries({ color: '#10b981', priceFormat: { type: 'volume' } }).setData(data.macd_data.map(d => ({ time: d.time, value: d.osc, color: d.osc > 0 ? '#ef4444' : '#10b981' })));
-            charts.macd.addLineSeries({ color: '#3b82f6', lineWidth: 1 }).setData(data.macd_data.map(d => ({ time: d.time, value: d.dif })));
+            charts.macd.addHistogramSeries().setData(data.macd_data.map(d => ({ time: d.time, value: d.osc, color: d.osc > 0 ? '#ef4444' : '#10b981' })));
             
             charts.kd = LightweightCharts.createChart(document.getElementById('kdChart'), { ...opt, height: 100 });
             charts.kd.addLineSeries({ color: '#3b82f6', lineWidth: 1 }).setData(data.kd_data.map(d => ({ time: d.time, value: d.k })));
             charts.kd.addLineSeries({ color: '#f59e0b', lineWidth: 1 }).setData(data.kd_data.map(d => ({ time: d.time, value: d.d })));
-
-            const allCharts = [charts.main, charts.macd, charts.kd];
             
-            if (iv === '1d') {
-                charts.chip = LightweightCharts.createChart(document.getElementById('chipChart'), { ...opt, height: 120, timeScale: { visible: true } });
-                const chipTotal = charts.chip.addHistogramSeries({ priceFormat: { type: 'volume' } });
-                if (data.chip_data && data.chip_data.length > 0) chipTotal.setData(data.chip_data.map(d => ({ time: d.time, value: d.value, color: d.value > 0 ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)' })));
-                seriesDict.foreignLine = charts.chip.addLineSeries({ color: '#fde047', lineWidth: 1.5 });
-                if (data.foreign_data && data.foreign_data.length > 0) seriesDict.foreignLine.setData(data.foreign_data);
-                seriesDict.trustLine = charts.chip.addLineSeries({ color: '#f43f5e', lineWidth: 1.5 });
-                if (data.trust_data && data.trust_data.length > 0) seriesDict.trustLine.setData(data.trust_data);
-                
-                const lFor = document.getElementById('l-for'); const lTru = document.getElementById('l-tru');
-                charts.chip.subscribeCrosshairMove(param => {
-                    if (param.time) {
-                        const fVal = param.seriesData.get(seriesDict.foreignLine); lFor.innerText = `外:${fVal ? fVal.value.toFixed(0) : '--'}`;
-                        const tVal = param.seriesData.get(seriesDict.trustLine); lTru.innerText = `投:${tVal ? tVal.value.toFixed(0) : '--'}`;
-                    }
-                });
-                allCharts.push(charts.chip);
-            }
-
-            const sync = (s, t) => { s.timeScale().subscribeVisibleTimeRangeChange(r => { t.forEach(x => x.timeScale().setVisibleRange(r)); }); };
-            allCharts.forEach(s => sync(s, allCharts.filter(c => c !== s)));
             charts.main.timeScale().fitContent();
         }
     </script>
