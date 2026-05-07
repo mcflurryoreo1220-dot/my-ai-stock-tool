@@ -3,186 +3,145 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 股票戰情室 - 機構透視版</title>
+    <title>AI 股票戰情室 - 機構深度透視版</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         :root { 
             --bg-dark: #020617; --panel-bg: #0a1128; --border-color: #1e3a8a; 
             --text-main: #e2e8f0; --text-muted: #94a3b8; 
             --blue: #3b82f6; --cyan: #06b6d4; --red: #ef4444; --green: #10b981; --orange: #f59e0b; 
-            --ma5: #fde047; --ma20: #f43f5e; --ma60: #06b6d4; --purple: #8b5cf6;
+            --ma5: #fde047; --ma20: #f43f5e; --purple: #8b5cf6;
         }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-dark); color: var(--text-main); margin: 0; padding: 6px; height: 100vh; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; }
         ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: var(--bg-dark); } ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
 
-        .top-bar { flex: 0 0 42px; display: flex; justify-content: space-between; align-items: center; background: var(--panel-bg); padding: 0 12px; border-radius: 4px; border: 1px solid var(--border-color); margin-bottom: 6px; box-shadow: 0 0 10px rgba(30,58,138,0.3); }
+        .top-bar { flex: 0 0 42px; display: flex; justify-content: space-between; align-items: center; background: var(--panel-bg); padding: 0 12px; border-radius: 4px; border: 1px solid var(--border-color); margin-bottom: 6px; }
         .search-group { display: flex; gap: 8px; align-items: center; }
-        input[type="text"], select { padding: 4px 10px; background: #020617; border: 1px solid var(--border-color); color: white; border-radius: 4px; outline: none; font-weight: bold; font-size: 13px; }
-        button { padding: 4px 12px; border: none; border-radius: 4px; font-weight: bold; font-size: 12px; cursor: pointer; color: white; transition: 0.2s; }
-        .btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); border: 1px solid #3b82f6; } .btn-primary:hover { background: #1e40af; }
-        .btn-radar { background: linear-gradient(135deg, #7c3aed, #5b21b6); border: 1px solid #8b5cf6; }
-        .btn-sector { background: linear-gradient(135deg, #059669, #047857); border: 1px solid #10b981; }
-        
-        .price-zone { display: none; align-items: baseline; gap: 10px; }
-        .current-price { font-size: 24px; font-weight: bold; }
-        .price-change { font-size: 14px; font-weight: bold; }
-        
-        /* 比例優化，讓中間戰術板與右側機構板更寬 */
-        .main-grid { flex: 1; display: grid; grid-template-columns: 14fr 11fr 12fr; gap: 8px; overflow: hidden; display: none; }
-        .column { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding-right: 2px; }
-        
-        .chart-wrapper { background: var(--panel-bg); padding: 4px; border-radius: 4px; border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 2px; flex:1;}
-        .chart-box { position: relative; width: 100%; border-bottom: 1px solid #172554; }
-        .chart-box:last-child { border-bottom: none; }
-        .chart-title { position: absolute; z-index: 2; padding: 2px 6px; font-size: 10px; background: rgba(2,6,23,0.8); color: var(--cyan); border: 1px solid #1e3a8a; top: 4px; left: 4px; border-radius: 2px; }
-        #mainChart { height: 420px; } .sub-chart { height: 110px; }
-        
-        .info-card { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; }
-        .card-header { font-size: 12px; font-weight: bold; color: var(--cyan); border-bottom: 1px solid var(--border-color); padding-bottom: 4px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;}
+        input[type="text"] { padding: 4px 10px; background: #020617; border: 1px solid var(--border-color); color: white; border-radius: 4px; width: 70px; font-weight: bold; }
+        button { padding: 4px 12px; border: none; border-radius: 4px; font-weight: bold; font-size: 12px; cursor: pointer; color: white; }
+        .btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); } .btn-radar { background: #7c3aed; } .btn-sector { background: #059669; }
 
-        /* 中欄：8 大戰略指引 */
+        .price-zone { display: none; align-items: center; gap: 10px; }
+        .current-price { font-size: 24px; font-weight: bold; }
+        
+        .main-grid { flex: 1; display: grid; grid-template-columns: 14fr 10fr 12fr; gap: 8px; overflow: hidden; display: none; }
+        .column { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; padding-right: 2px; }
+        
+        .chart-wrapper { background: var(--panel-bg); padding: 4px; border-radius: 4px; border: 1px solid var(--border-color); flex:1;}
+        #mainChart { height: 450px; } #kdChart { height: 110px; }
+        
+        .info-card { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 6px 10px; }
+        .card-header { font-size: 12px; font-weight: bold; color: var(--cyan); border-bottom: 1px solid var(--border-color); padding-bottom: 4px; margin-bottom: 6px; }
+
         .hub-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-        .hub-item { background: #020617; border: 1px solid #1e293b; padding: 6px 8px; border-radius: 4px; display:flex; flex-direction:column; justify-content:center;}
-        .hub-lbl { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; border-bottom: 1px solid #0f172a; padding-bottom: 2px;}
+        .hub-item { background: #020617; border: 1px solid #1e293b; padding: 6px 8px; border-radius: 4px; }
+        .hub-lbl { font-size: 10px; color: var(--text-muted); border-bottom: 1px solid #0f172a; margin-bottom: 4px; display:block;}
         .hub-val { font-size: 12px; font-weight: bold; color: white; line-height: 1.4; }
         .hub-wide { grid-column: span 2; }
 
-        /* 警示中心 */
-        .alert-box { border: 1px dashed var(--text-muted); background: #020617; border-radius: 4px; padding: 10px; text-align: center; margin-bottom: 8px; transition: 0.3s; }
-        .alert-danger { border-color: var(--red); background: rgba(239,68,68,0.1); box-shadow: 0 0 10px rgba(239,68,68,0.3); }
-        .alert-warning { border-color: var(--orange); background: rgba(245,158,11,0.1); box-shadow: 0 0 10px rgba(245,158,11,0.3); }
-        .alert-title { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
-        .alert-danger .alert-title { color: var(--red); animation: blink 1s infinite alternate; }
-        .alert-warning .alert-title { color: var(--orange); }
-        .alert-msg { font-size: 11px; color: var(--text-main); }
-        @keyframes blink { from { opacity: 1; } to { opacity: 0.6; text-shadow: 0 0 10px var(--red); } }
-
-        /* === 全新：機構護城河透視面板 === */
-        .moat-box { background: #020617; border: 1px solid var(--purple); border-radius: 4px; padding: 10px; margin-bottom: 8px; }
-        .moat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-        .moat-title { font-size: 12px; font-weight: bold; color: var(--purple); }
-        .moat-score { font-size: 16px; font-weight: bold; color: white; background: var(--purple); padding: 2px 8px; border-radius: 4px; }
-        .narrative-box { background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; margin-bottom: 8px; border-left: 3px solid var(--cyan); }
-        .narrative-title { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; font-weight:bold; }
-        .narrative-text { font-size: 12px; color: white; line-height: 1.4; }
-        .risk-ul { margin: 0; padding-left: 20px; font-size: 11px; color: var(--orange); }
-        .risk-ul li { margin-bottom: 4px; }
-
-        /* 雙儀表板 */
-        .ai-viz-row { display: flex; gap: 8px; margin-bottom: 8px; }
-        .viz-box { flex: 1; background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; display: flex; flex-direction: column; align-items: center; position: relative; }
-        .gauge-container { display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; padding-bottom: 30px; margin-top: 15px; }
-        .gauge-arc { width: 100px; height: 50px; border-radius: 100px 100px 0 0; background: conic-gradient(from 270deg, var(--red) 0% 50%, var(--green) 50% 100%); position: relative; }
+        .viz-box { background: #020617; border: 1px solid var(--border-color); border-radius: 4px; padding: 10px; display: flex; flex-direction: column; align-items: center; position: relative; flex:1;}
+        .gauge-arc { width: 100px; height: 50px; border-radius: 100px 100px 0 0; background: conic-gradient(from 270deg, var(--red) 0% 50%, var(--green) 50% 100%); position: relative; margin-top: 10px; }
         .gauge-arc::after { content: ''; position: absolute; bottom: 0; left: 15px; width: 70px; height: 35px; background: #020617; border-radius: 70px 70px 0 0; }
-        .gauge-needle { position: absolute; bottom: 30px; left: 50%; width: 3px; height: 45px; background: white; transform-origin: bottom center; transform: rotate(-90deg); transition: 1s ease-out; border-radius: 2px; }
-        .gauge-text { position: absolute; bottom: 30px; font-size: 16px; font-weight: bold; color: white; z-index: 10; text-shadow: 0 0 4px #000; }
-        .gauge-label { position: absolute; bottom: 5px; font-size: 9px; color: var(--text-muted); width: 100%; text-align: center; }
-        .donut-wrap { display: flex; align-items: center; gap: 10px; width: 100%; justify-content: center; margin-top: 15px;}
-        .donut-chart { width: 60px; height: 60px; border-radius: 50%; background: conic-gradient(var(--red) 0% 33%, var(--green) 33% 66%, var(--orange) 66% 100%); position: relative; display: flex; justify-content: center; align-items: center; }
-        .donut-inner { width: 38px; height: 38px; border-radius: 50%; background: #020617; position: absolute; font-size: 9px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
-
-        .chip-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: center; }
-        .chip-table th { background: #020617; padding: 6px; color: var(--cyan); border-bottom: 1px solid var(--border-color); font-weight: normal; }
-        .chip-table td { padding: 6px 4px; border-bottom: 1px solid #0f172a; }
-        .chip-status-bar { font-size:10px; color:var(--text-muted); text-align:right; margin-bottom:4px; font-style: italic;}
+        .gauge-needle { position: absolute; bottom: 0; left: 50%; width: 2px; height: 45px; background: white; transform-origin: bottom center; transform: rotate(-90deg); transition: 1s; }
+        .gauge-text { position: absolute; bottom: 2px; font-size: 16px; font-weight: bold; }
         
-        .modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:100; display:none; justify-content:center; align-items:center; }
-        .modal-content { background:var(--panel-bg); border:1px solid var(--blue); border-radius:8px; width:450px; padding:15px; max-height:80vh; overflow-y:auto;}
-        #sysMessage { font-size: 12px; color: var(--cyan); position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-weight: bold;}
+        .donut-chart { width: 60px; height: 60px; border-radius: 50%; background: #1e293b; position: relative; display: flex; justify-content: center; align-items: center; margin-top: 10px;}
+        .donut-inner { width: 38px; height: 38px; border-radius: 50%; background: #020617; position: absolute; font-size: 9px; display: flex; align-items: center; justify-content: center; }
+
+        /* === 全新：情報快鏈樣式 === */
+        .link-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 5px; }
+        .info-link { background: #1e293b; color: var(--cyan); text-decoration: none; font-size: 10px; padding: 6px; text-align: center; border-radius: 3px; font-weight: bold; transition: 0.2s; border: 1px solid transparent;}
+        .info-link:hover { background: var(--cyan); color: #000; border-color: white;}
+
+        .alert-box { border: 1px dashed var(--orange); background: rgba(245,158,11,0.05); padding: 8px; text-align: center; border-radius: 4px; margin-bottom: 6px;}
+        .danger { border-color: var(--red); color: var(--red); background: rgba(239,68,68,0.1); }
     </style>
 </head>
 <body>
-    <div class="modal-overlay" id="radarModal"><div class="modal-content"><div style="display:flex;justify-content:space-between;"><span>📡 雷達掃描</span><button onclick="closeModal('radarModal')" style="background:none;color:gray;border:none;">×</button></div><ul id="radarList" style="list-style:none;padding:0;"></ul></div></div>
-    <div class="modal-overlay" id="sectorModal"><div class="modal-content"><div style="display:flex;justify-content:space-between;"><span>🗂️ 板塊熱力圖</span><button onclick="closeModal('sectorModal')" style="background:none;color:gray;border:none;">×</button></div><div id="sectorList"></div></div></div>
-
     <div class="top-bar">
         <div class="search-group">
             <button class="btn-radar" onclick="startRadar()">📡 雷達</button>
             <button class="btn-sector" onclick="startSectors()">🗂️ 板塊</button>
-            <input type="text" id="symbol" value="2330" placeholder="代碼" style="width: 70px;">
-            <select id="intervalSelector"><option value="1d">日K</option><option value="60m">60分</option></select>
+            <input type="text" id="symbol" value="2330" placeholder="代碼">
             <button class="btn-primary" id="analyzeBtn" onclick="analyze()">⚡ 啟動機構終端</button>
         </div>
-        <div id="sysMessage"></div>
+        <div id="sysMessage" style="font-size:12px; color:var(--cyan); font-weight:bold;"></div>
         <div class="price-zone" id="priceZone">
             <span id="stockTitle" style="font-weight:bold; font-size:18px; color:white;">--</span>
             <span id="ai-signal-badge" style="font-size:11px; padding:2px 6px; border-radius:4px; background:rgba(255,255,255,0.1);">--</span>
-            <div style="display:flex; align-items:baseline; gap:8px;">
-                <div class="current-price" id="currentPriceDisplay">0.00</div>
-                <div class="price-change" id="priceChangeDisplay">--</div>
-            </div>
+            <div class="current-price" id="priceDisplay">0.00</div>
         </div>
     </div>
     
     <div class="main-grid" id="mainGrid">
-        <!-- 左欄：主圖 -->
         <div class="column">
             <div class="chart-wrapper">
-                <div class="chart-box"><div class="chart-title">技術面分析</div><div id="mainChart"></div></div>
-                <div class="chart-box"><div id="macdChart" class="sub-chart"></div></div>
-                <div class="chart-box" style="border:none;"><div id="kdChart" class="sub-chart"></div></div>
+                <div class="chart-box"><div class="chart-title">技術面分析 (日K線)</div><div id="mainChart"></div></div>
+                <div class="chart-box" style="border:none;"><div id="kdChart"></div></div>
+            </div>
+            <div class="info-card" style="margin-top:2px; padding:8px;">
+                <div style="display:flex; justify-content:space-between; font-size:12px;">
+                    <span>大盤漲跌: <b id="taiex-chg">--%</b></span>
+                    <span>個股對比: <b id="alpha-strength" style="color:var(--cyan)">--</b></span>
+                </div>
             </div>
         </div>
         
-        <!-- 中欄：8大戰術與警示 -->
         <div class="column">
-            <div class="info-card" style="border-color:var(--orange);">
-                <div class="card-header" style="color:var(--orange);">🚨 盤中量價警示中心</div>
-                <div class="alert-box" id="alertBox">
-                    <div class="alert-title" id="alertTitle">安全</div><div class="alert-msg" id="alertMsg">目前無明顯異常跡象</div>
-                </div>
+            <div class="alert-box" id="alertBox">
+                <div style="font-size:14px; font-weight:bold;" id="alertTitle">安全</div>
+                <div style="font-size:11px;" id="alertMsg">量價結構目前穩定</div>
             </div>
 
             <div class="info-card" style="flex:1;">
-                <div class="card-header">🔱 我的建議 (AI) - 戰術中樞</div>
-                <div class="hub-grid" style="height:100%;">
-                    <div class="hub-item hub-wide"><span class="hub-lbl">1. 操作建議 (短線)</span><span class="hub-val" id="h-op-short" style="color:var(--cyan);">--</span></div>
-                    <div class="hub-item"><span class="hub-lbl">2. 量價背離判斷</span><span class="hub-val" id="h-vol-price-div">--</span></div>
-                    <div class="hub-item"><span class="hub-lbl">3. 進場勝率</span><span class="hub-val" id="h-entry-winrate">--</span></div>
-                    <div class="hub-item hub-wide"><span class="hub-lbl">4. 中長線看法</span><span class="hub-val" id="h-mid-long-view">--</span></div>
-                    <div class="hub-item"><span class="hub-lbl">5. 成交量分析 (盤後)</span><span class="hub-val" id="h-vol-analysis">--</span></div>
-                    <div class="hub-item"><span class="hub-lbl">6. 主力出貨警示</span><span class="hub-val" id="h-exit-warning">--</span></div>
-                    <div class="hub-item hub-wide"><span class="hub-lbl">7. 關鍵價位 (支撐/壓力)</span><span class="hub-val" id="h-key-levels" style="color:var(--orange);">--</span></div>
-                    <div class="hub-item hub-wide" style="border-color:var(--red); background:rgba(239,68,68,0.05);"><span class="hub-lbl" style="color:var(--red);">8. 風險提醒</span><span class="hub-val" id="h-risk-reminder" style="color:var(--red);">--</span></div>
+                <div class="card-header">🔱 AI 戰術指揮中樞</div>
+                <div class="hub-grid" id="hub-content">
+                    <div class="hub-item hub-wide"><span class="hub-lbl">1. 操作建議 (短線)</span><span class="hub-val" id="h-op">--</span></div>
+                    <div class="hub-item"><span class="hub-lbl">2. 量價背離判斷</span><span class="hub-val" id="h-vol-div">--</span></div>
+                    <div class="hub-item"><span class="hub-lbl">3. 進場勝率</span><span class="hub-val" id="h-win">--</span></div>
+                    <div class="hub-item hub-wide"><span class="hub-lbl">4. 中長線看法</span><span class="hub-val" id="h-long">--</span></div>
+                    <div class="hub-item"><span class="hub-lbl">5. 成交量分析</span><span class="hub-val" id="h-vol-an">--</span></div>
+                    <div class="hub-item"><span class="hub-lbl">6. 主力出貨警示</span><span class="hub-val" id="h-exit">--</span></div>
+                    <div class="hub-item hub-wide"><span class="hub-lbl">7. 關鍵價位 (支撐/壓力)</span><span class="hub-val" id="h-levels" style="color:var(--orange);">--</span></div>
+                    <div class="hub-item hub-wide" style="border-color:var(--red);"><span class="hub-lbl" style="color:var(--red);">8. 風險提醒</span><span class="hub-val" id="h-risk">--</span></div>
                 </div>
             </div>
         </div>
 
-        <!-- 右欄：機構透視與籌碼 -->
         <div class="column">
-            <!-- 儀表板 -->
-            <div class="ai-viz-row">
-                <div class="viz-box" style="border-color:var(--red);">
-                    <div style="font-size:11px; color:var(--red); font-weight:bold; position:absolute; top:4px; left:6px;">勝率評估</div>
-                    <div class="gauge-container"><div class="gauge-arc"></div><div class="gauge-needle" id="gaugeNeedle"></div><div class="gauge-text" id="gaugeText">0%</div><div class="gauge-label" id="gaugeLabel">等待計算</div></div>
+            <div style="display:flex; gap:6px;">
+                <div class="viz-box">
+                    <div style="font-size:10px; font-weight:bold; color:var(--red);">勝率評估</div>
+                    <div class="gauge-container"><div class="gauge-arc"></div><div class="gauge-needle" id="gaugeNeedle"></div><div class="gauge-text" id="gaugeText">0%</div></div>
                 </div>
-                <div class="viz-box" style="border-color:var(--cyan);">
-                    <div style="font-size:11px; color:var(--cyan); font-weight:bold; position:absolute; top:4px; left:6px;">明日機率</div>
-                    <div class="donut-wrap"><div class="donut-chart" id="donutChart"><div class="donut-inner">AI</div></div>
-                    <div style="font-size:9px; display:flex; flex-direction:column; gap:4px; margin-left:8px;">
-                        <div><span style="display:inline-block;width:8px;height:8px;background:var(--red);margin-right:4px;"></span><span id="p-up">--%</span></div>
-                        <div><span style="display:inline-block;width:8px;height:8px;background:var(--orange);margin-right:4px;"></span><span id="p-flat">--%</span></div>
-                        <div><span style="display:inline-block;width:8px;height:8px;background:var(--green);margin-right:4px;"></span><span id="p-down">--%</span></div>
-                    </div></div>
+                <div class="viz-box">
+                    <div style="font-size:10px; font-weight:bold; color:var(--cyan);">明日機率</div>
+                    <div class="donut-chart" id="donutChart"><div class="donut-inner">AI</div></div>
+                    <div style="font-size:9px; margin-top:8px;"><span id="p-up">漲--%</span> | <span id="p-down">跌--%</span></div>
                 </div>
             </div>
 
-            <!-- 機構透視 -->
-            <div class="info-card" style="border-color: var(--purple);">
-                <div class="card-header" style="color: var(--purple); border-color: var(--purple);">🏰 機構級商業護城河透視</div>
-                <div class="moat-box"><div class="moat-header"><span class="moat-title">競爭護城河評分</span><span class="moat-score" id="moat-score">--/10</span></div><div style="font-size:11px; color:var(--text-main);" id="moat-desc">--</div></div>
-                <div class="narrative-box"><div class="narrative-title">當前市場敘事 (已定價)</div><div class="narrative-text" id="market-narrative">--</div></div>
-                <div class="narrative-box" style="border-left-color: var(--orange); margin-bottom:4px;"><div class="narrative-title">市場潛在盲點 / 未驗證假設</div><div class="narrative-text" id="narrative-risk">--</div></div>
-                <div style="font-size:10px; color:var(--text-muted); display:flex; justify-content:space-between; margin-top:6px; border-top:1px dashed #1e293b; padding-top:4px;">
-                    <span>產業鏈: <b id="ai-industry" style="color:white;">--</b></span><span>牛熊預測: <b id="bull-bear" style="color:var(--cyan);">--</b></span>
+            <div class="info-card" style="border-color: var(--purple); flex: 1;">
+                <div class="card-header" style="color: var(--purple);">🏰 機構級商業護城河透視</div>
+                <div style="background:#020617; border:1px solid var(--purple); padding:8px; border-radius:4px; margin-bottom:6px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:11px; color:var(--purple); font-weight:bold;">護城河評分</span>
+                        <span style="font-size:16px; font-weight:bold;" id="moat-score">--</span>
+                    </div>
                 </div>
-            </div>
-            
-            <!-- 籌碼明細與時間防呆 -->
-            <div class="info-card" style="flex:1;">
-                <div class="card-header" style="margin-bottom:0; border-bottom:none;">🏦 法人近 10 日動向</div>
-                <div class="chip-status-bar" id="chipTimeStatus">--</div>
-                <table class="chip-table"><thead><tr><th>日期</th><th>外</th><th>投</th><th>自</th><th>計</th></tr></thead><tbody id="chipTableBody"></tbody></table>
+                <div style="font-size:11px; color:var(--text-muted); margin-bottom:4px;">市場目前炒作敘事 (已定價)：</div>
+                <div style="font-size:12px; color:white; line-height:1.4; background:rgba(255,255,255,0.05); padding:8px; border-radius:4px;" id="narrative">--</div>
+                
+                <div style="margin-top:10px; border-top:1px dashed #1e293b; padding-top:10px;">
+                    <div style="font-size:11px; color:var(--cyan); font-weight:bold; margin-bottom:4px;">牛熊預測：<span id="bull-bear" style="color:white;">--</span></div>
+                    <div style="font-size:10px; color:var(--text-muted);">產業鏈：<span id="industry" style="color:white;">--</span></div>
+                </div>
+
+                <div style="margin-top:15px; border-top:2px solid #1e293b; padding-top:10px;">
+                    <div style="font-size:11px; font-weight:bold; color:var(--orange); margin-bottom:6px;">🔍 深度情報快鏈 (直達直查)</div>
+                    <div class="link-grid" id="infoLinks">
+                        </div>
+                </div>
             </div>
         </div>
     </div>
@@ -191,149 +150,87 @@
         let charts = {}; let currentAnalysis = { symbol: '', price: 0 };
         function closeModal(id) { document.getElementById(id).style.display = 'none'; }
         
-        async function startRadar() {
-            document.getElementById('radarModal').style.display = 'flex';
-            try {
-                const res = await fetch('https://my-ai-stock-tool.onrender.com/radar');
-                const data = await res.json();
-                if (data.status === "success") {
-                    document.getElementById('radarList').innerHTML = data.matches.map(s => `<li style="padding:8px; cursor:pointer; border-bottom:1px solid #1e293b;" onclick="loadStock('${s.symbol}')">${s.name} (${s.symbol}) - <b style="color:var(--red);">${s.price}</b></li>`).join('');
-                }
-            } catch(e) {}
-        }
-
-        async function startSectors() {
-            document.getElementById('sectorModal').style.display = 'flex';
-            try {
-                const res = await fetch('https://my-ai-stock-tool.onrender.com/sectors');
-                const data = await res.json();
-                if (data.status === "success") {
-                    let h = '';
-                    for (const [sec, sts] of Object.entries(data.data)) {
-                        h += `<div style="margin-bottom:10px;"><div style="color:var(--cyan);font-weight:bold;font-size:12px;margin-bottom:4px;">${sec}</div>`;
-                        sts.forEach(s => { h += `<div style="display:flex;justify-content:space-between;font-size:11px;padding:4px;cursor:pointer;" onclick="loadStock('${s.symbol}')"><span>${s.name}</span><span style="color:${s.change>0?'var(--red)':'var(--green)'}">${s.price} (${s.change}%)</span></div>`; });
-                        h += `</div>`;
-                    }
-                    document.getElementById('sectorList').innerHTML = h;
-                }
-            } catch(e) {}
-        }
-        function loadStock(s) { closeModal('radarModal'); closeModal('sectorModal'); document.getElementById('symbol').value = s; analyze(); }
-
         async function analyze() {
             const sym = document.getElementById('symbol').value.trim();
             const symbol = /^\d+$/.test(sym) ? sym + ".TW" : sym;
-            const interval = document.getElementById('intervalSelector').value;
             const btn = document.getElementById('analyzeBtn');
             const msg = document.getElementById('sysMessage');
-            
             document.getElementById('mainGrid').style.display = "none"; document.getElementById('priceZone').style.display = "none";
-            btn.disabled = true; msg.innerText = '🔄 機構級深層透視分析中...';
+            btn.disabled = true; msg.innerText = '🔄 避險基金級別深層解析中...';
             
             try {
-                const res = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${symbol}&interval=${interval}`);
+                const res = await fetch(`https://my-ai-stock-tool.onrender.com/predict?symbol=${symbol}`);
                 const data = await res.json();
                 if(data.status === "success") {
                     msg.innerText = "";
                     currentAnalysis.symbol = data.symbol; currentAnalysis.price = data.current_price;
                     document.getElementById('mainGrid').style.display = "grid"; document.getElementById('priceZone').style.display = "flex";
-                    document.getElementById('stockTitle').innerText = data.fundamental.name || data.symbol.split('.')[0];
                     
-                    let cpDisplay = document.getElementById('currentPriceDisplay');
-                    let chgDisplay = document.getElementById('priceChangeDisplay');
-                    let chgAmt = data.volume_data.price_change;
-                    let chgPct = data.volume_data.price_change_pct;
-                    cpDisplay.innerText = data.current_price.toFixed(2);
-                    if(chgAmt > 0) { chgDisplay.innerText = `▲ ${chgAmt.toFixed(2)} (${chgPct.toFixed(2)}%)`; chgDisplay.style.color = "var(--red)"; cpDisplay.style.color = "var(--red)"; } 
-                    else if(chgAmt < 0) { chgDisplay.innerText = `▼ ${Math.abs(chgAmt).toFixed(2)} (${chgPct.toFixed(2)}%)`; chgDisplay.style.color = "var(--green)"; cpDisplay.style.color = "var(--green)"; } 
-                    else { chgDisplay.innerText = `0.00 (0.00%)`; chgDisplay.style.color = "white"; cpDisplay.style.color = "white"; }
+                    const pure = data.symbol.split('.')[0];
+                    document.getElementById('stockTitle').innerText = pure;
+                    document.getElementById('priceDisplay').innerText = data.current_price.toFixed(2);
+                    
+                    // 更新 Alpha 與 大盤
+                    document.getElementById('taiex-chg').innerText = data.alpha.taiex + "%";
+                    document.getElementById('alpha-strength').innerText = data.alpha.strength;
+                    
+                    // 更新情報快鏈
+                    document.getElementById('infoLinks').innerHTML = `
+                        <a href="https://statementdog.com/analysis/${pure}" target="_blank" class="info-link">財報狗</a>
+                        <a href="https://news.cnyes.com/stock/${pure}" target="_blank" class="info-link">鉅亨快訊</a>
+                        <a href="https://www.moneydj.com/KMDJ/Wiki/WikiViewer.aspx?KeyID=${pure}" target="_blank" class="info-link">MoneyDJ</a>
+                        <a href="https://vime.arklab.cc/stock/${pure}" target="_blank" class="info-link">方舟運算</a>
+                        <a href="https://www.stockfeel.com.tw/?s=${pure}" target="_blank" class="info-link">股感百科</a>
+                    `;
 
-                    // 寫入籌碼時間防呆狀態
-                    let timeStatEl = document.getElementById('chipTimeStatus');
-                    timeStatEl.innerText = data.chip_time_status;
-                    if(data.chip_time_status.includes('盤中')) timeStatEl.style.color = "var(--orange)";
-                    else timeStatEl.style.color = "var(--green)";
-
-                    if (data.chip_table) {
-                        document.getElementById('chipTableBody').innerHTML = data.chip_table.map(r => `<tr><td>${r.date}</td><td style="color:${r.foreign>0?'var(--red)':'var(--green)'}">${r.foreign}</td><td style="color:${r.trust>0?'var(--red)':'var(--green)'}">${r.trust}</td><td>${r.dealer}</td><td style="font-weight:bold;">${r.total}</td></tr>`).join('');
-                    }
-
-                    const wBox = data.warning_box;
-                    let aBox = document.getElementById('alertBox');
-                    document.getElementById('alertTitle').innerText = wBox.title;
-                    document.getElementById('alertMsg').innerText = wBox.msg;
-                    aBox.className = 'alert-box';
-                    if(wBox.level === 'danger') aBox.classList.add('alert-danger');
-                    else if(wBox.level === 'warning') aBox.classList.add('alert-warning');
-
+                    // AI 指揮中樞
                     const ai = data.ai_analysis;
-                    document.getElementById('h-op-short').innerText = ai.op_short;
-                    document.getElementById('h-vol-price-div').innerText = ai.vol_price_div;
-                    document.getElementById('h-entry-winrate').innerText = ai.entry_winrate;
-                    document.getElementById('h-mid-long-view').innerText = ai.mid_long_view;
-                    document.getElementById('h-vol-analysis').innerText = ai.vol_analysis;
-                    document.getElementById('h-exit-warning').innerText = ai.exit_warning;
-                    document.getElementById('h-key-levels').innerText = ai.key_levels;
-                    document.getElementById('h-risk-reminder').innerText = ai.risk_reminder;
-                    document.getElementById('h-industry').innerText = ai.industry_desc;
+                    document.getElementById('h-op').innerText = ai.op_short;
+                    document.getElementById('h-vol-div').innerText = ai.vol_price_div;
+                    document.getElementById('h-win').innerText = ai.entry_winrate;
+                    document.getElementById('h-long').innerText = ai.mid_long_view;
+                    document.getElementById('h-vol-an').innerText = ai.vol_analysis;
+                    document.getElementById('h-exit').innerText = ai.exit_warning;
+                    document.getElementById('h-levels').innerText = ai.key_levels;
+                    document.getElementById('h-risk').innerText = ai.risk_reminder;
+                    
+                    document.getElementById('moat-score').innerText = ai.moat_score;
+                    document.getElementById('narrative').innerText = ai.market_narrative;
+                    document.getElementById('bull-bear').innerText = ai.bull_bear;
+                    document.getElementById('industry').innerText = ai.industry_desc;
 
-                    let bdg = document.getElementById('ai-signal-badge');
-                    bdg.innerText = ai.signal; bdg.style.color = ai.signal.includes('多') ? 'var(--red)' : (ai.signal.includes('空') ? 'var(--green)' : 'var(--orange)');
+                    // 警示燈
+                    const w = data.warning;
+                    const aBox = document.getElementById('alertBox');
+                    document.getElementById('alertTitle').innerText = w.title;
+                    document.getElementById('alertMsg').innerText = w.msg;
+                    aBox.className = w.active ? 'alert-box danger' : 'alert-box';
 
-                    // 機構面板
-                    document.getElementById('ai-industry').innerText = ai.industry_desc || '--';
-                    document.getElementById('moat-score').innerText = `${ai.moat_score || '--'}/10`;
-                    document.getElementById('moat-desc').innerText = ai.moat_desc || '--';
-                    document.getElementById('market-narrative').innerText = ai.market_narrative || '--';
-                    document.getElementById('narrative-risk').innerText = ai.narrative_risk || '--';
-                    document.getElementById('bull-bear').innerText = ai.bull_bear || '--';
+                    // 儀表板
+                    document.getElementById('gaugeText').innerText = ai.prob_up + "%";
+                    document.getElementById('gaugeNeedle').style.transform = `rotate(${-90 + (180 * (ai.prob_up/100))}deg)`;
+                    document.getElementById('donutChart').style.background = `conic-gradient(var(--red) 0% ${ai.prob_up}%, var(--orange) ${ai.prob_up}% ${ai.prob_up+ai.prob_flat}%, var(--green) ${ai.prob_up+ai.prob_flat}% 100%)`;
+                    document.getElementById('p-up').innerText = `漲${ai.prob_up}%`; document.getElementById('p-down').innerText = `跌${ai.prob_down}%`;
 
-                    let pup = ai.prob_up, pdown = ai.prob_down, pflat = ai.prob_flat;
-                    document.getElementById('p-up').innerText = `${pup}%`; document.getElementById('p-down').innerText = `${pdown}%`; document.getElementById('p-flat').innerText = `${pflat}%`;
-                    document.getElementById('donutChart').style.background = `conic-gradient(var(--red) 0% ${pup}%, var(--orange) ${pup}% ${pup+pflat}%, var(--green) ${pup+pflat}% 100%)`;
-
-                    runBacktest(data.chart_data, data.kd_data, data.macd_data);
                     renderCharts(data);
                 }
-            } catch(e) { msg.innerText = "連線超時，請重按一次！"; }
-            finally { btn.disabled = false; }
-        }
-
-        function runBacktest(klineData, kdData, macdData) {
-            let holding = false, buyPrice = 0, totalReturn = 0, wins = 0, losses = 0;
-            let priceMap = {}; klineData.forEach(d => { priceMap[d.time] = d.close; });
-            let ma20Map = {}; klineData.forEach(d => { ma20Map[d.time] = d.ma20; });
-            let macdMap = {}; macdData.forEach(d => { macdMap[d.time] = d.osc; });
-
-            for (let i = 1; i < kdData.length; i++) {
-                const p = kdData[i - 1], c = kdData[i];
-                const cp = priceMap[c.time]; const ma20 = ma20Map[c.time] || 0; const osc = macdMap[c.time] || 0;
-                if(!cp) continue;
-                if (!holding && p.k <= p.d && c.k > c.d && cp > ma20 && osc > 0) { holding = true; buyPrice = cp; }
-                else if (holding && p.k >= p.d && c.k < c.d) { holding = false; let ret = ((cp - buyPrice) / buyPrice) * 100; totalReturn += ret; if (ret > 0) wins++; else losses++; }
-            }
-            if (holding) { let ret = ((klineData[klineData.length-1].close - buyPrice) / buyPrice) * 100; totalReturn += ret; if (ret > 0) wins++; else losses++; }
-            
-            let total = wins + losses; let wr = total > 0 ? Math.round((wins / total) * 100) : 0;
-            document.getElementById('gaugeText').innerText = `${wr}%`;
-            document.getElementById('gaugeLabel').innerText = `${total}次 / ${totalReturn>0?'+':''}${totalReturn.toFixed(1)}%`;
-            let deg = -90 + (180 * (wr / 100)); document.getElementById('gaugeNeedle').style.transform = `rotate(${deg}deg)`;
+            } catch(e) { msg.innerText = "請再試一次"; } finally { btn.disabled = false; }
         }
 
         function renderCharts(data) {
             for (let key in charts) { if (charts[key]) try { charts[key].remove(); } catch(e){} }
-            const opt = { layout: { background: '#0a1128', textColor: '#94a3b8' }, grid: { vertLines: { color: '#1e3a8a' }, horzLines: { color: '#1e3a8a' } }, crosshair: { mode: 0 }, timeScale: { visible: false } };
-            charts.main = LightweightCharts.createChart(document.getElementById('mainChart'), { ...opt, height: 420 });
-            const candle = charts.main.addCandlestickSeries({ upColor: '#ef4444', downColor: '#10b981', borderVisible: false }); candle.setData(data.chart_data);
-            const m20 = charts.main.addLineSeries({ color: '#f43f5e', lineWidth: 1.5 }); m20.setData(data.chart_data.map(d => ({ time: d.time, value: d.ma20 })));
-            
-            charts.macd = LightweightCharts.createChart(document.getElementById('macdChart'), { ...opt, height: 110 });
-            charts.macd.addHistogramSeries().setData(data.macd_data.map(d => ({ time: d.time, value: d.osc, color: d.osc > 0 ? '#ef4444' : '#10b981' })));
+            const opt = { layout: { background: '#0a1128', textColor: '#94a3b8' }, grid: { vertLines: { color: '#1e3a8a' }, horzLines: { color: '#1e3a8a' } }, timeScale: { visible: false } };
+            charts.main = LightweightCharts.createChart(document.getElementById('mainChart'), { ...opt, height: 450 });
+            const candle = charts.main.addCandlestickSeries({ upColor: '#ef4444', downColor: '#10b981', borderVisible: false });
+            candle.setData(data.chart_data);
+            const bbU = charts.main.addLineSeries({ color: 'rgba(255,255,255,0.2)', lineWidth: 1, lineStyle: 2 });
+            bbU.setData(data.chart_data.map(d => ({ time: d.time, value: d.bb_upper })));
+            const bbL = charts.main.addLineSeries({ color: 'rgba(255,255,255,0.2)', lineWidth: 1, lineStyle: 2 });
+            bbL.setData(data.chart_data.map(d => ({ time: d.time, value: d.bb_lower })));
             
             charts.kd = LightweightCharts.createChart(document.getElementById('kdChart'), { ...opt, height: 110 });
-            charts.kd.addLineSeries({ color: '#3b82f6', lineWidth: 1.5 }).setData(data.kd_data.map(d => ({ time: d.time, value: d.k })));
-            charts.kd.addLineSeries({ color: '#f59e0b', lineWidth: 1.5 }).setData(data.kd_data.map(d => ({ time: d.time, value: d.d })));
-            
+            const ks = charts.kd.addLineSeries({ color: '#3b82f6', lineWidth: 1 });
+            ks.setData(data.kd_data.map(d => ({ time: d.time, value: d.k })));
             charts.main.timeScale().fitContent();
         }
     </script>
